@@ -52,3 +52,13 @@ def test_duplicate_exact_names_are_ambiguous():
     result = ExactProductIdentityResolver().resolve(extraction, catalogue)
     assert len(result) == 2
     assert all(item.status == IdentityStatus.MULTIPLE for item in result)
+
+
+def test_hindi_product_name_matches_unicode_catalogue_label():
+    extraction = ScanExtraction(
+        printed_product_name=ExtractedField(value="औषधि टैबलेट"),
+    )
+    catalogue = [CatalogueProduct(product_id="hi-1", display_name="औषधि टैबलेट")]
+    result = ExactProductIdentityResolver().resolve(extraction, catalogue)
+    assert len(result) == 1
+    assert result[0].status == IdentityStatus.EXACT_IDENTITY
