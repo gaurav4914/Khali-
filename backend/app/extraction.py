@@ -17,9 +17,13 @@ COMPONENT_PATTERN = re.compile(
 COMPOSITION_HEADING = re.compile(
     r"(?i)\bcomposition\b|\beach\s+(?:tablet|capsule|5\s*ml|10\s*ml|dose)\s+contains\b"
 )
+ACTIVE_COMPOSITION_HEADING = re.compile(
+    r"(?i)\bactive\s+ingredients?\b|\beach\s+(?:tablet|capsule|5\s*ml|10\s*ml|dose)\s+contains\b"
+)
 MANUFACTURER_HINTS = ("manufactured by", "marketed by", "निर्माता", "विपणन")
 STOP_SECTION = re.compile(
-    r"(?i)^(?:indications?|directions?|dosage|storage|warning|manufactured by|marketed by)\b"
+    r"(?i)^(?:indications?|directions?|dosage|storage|warning|excipients?|inactive ingredients?|"
+    r"colou?rs?|flavou?rs?|preservatives?|other ingredients|manufactured by|marketed by)\b"
 )
 
 
@@ -77,8 +81,9 @@ def extract_printed_fields(documents: list[tuple[str, OCRDocument]]) -> ScanExtr
             if COMPOSITION_HEADING.search(value):
                 in_composition_section = True
                 context_lines_remaining = 6
+                active_context = bool(ACTIVE_COMPOSITION_HEADING.search(value))
                 components = _parse_components(
-                    value, capture_id, document.mean_confidence, active_context=True
+                    value, capture_id, document.mean_confidence, active_context=active_context
                 )
                 capture_components.extend(components)
                 continue
@@ -92,7 +97,13 @@ def extract_printed_fields(documents: list[tuple[str, OCRDocument]]) -> ScanExtr
                 value,
                 capture_id,
                 document.mean_confidence,
-                active_context=in_composition_section,
+                active_context=(
+                    in_composition_section
+                    and any(
+                        ACTIVE_COMPOSITION_HEADING.search(previous[0])
+                        for previous in lines[-context_lines_remaining - 1 : -1]
+                    )
+                ),
             )
             capture_components.extend(components)
             if in_composition_section:
