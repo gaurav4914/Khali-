@@ -87,7 +87,7 @@ def test_returns_all_records_with_exact_active_composition_regardless_of_compone
     )
 
     assert result.status == CompositionSearchStatus.MATCHES_FOUND
-    assert result.total_matches == 2
+    assert result.matches_in_page == 2
     assert [item.product.product_id for item in result.matches] == ["ref-1", "other-1"]
     assert all(item.review_required for item in result.matches)
 
@@ -152,4 +152,36 @@ def test_inactive_excipients_do_not_change_the_active_signature():
     result = CompositionGroupMatcher().match(
         scanned_extraction(), catalogue, scan_id="scan-6"
     )
-    assert result.total_matches == 1
+    assert result.matches_in_page == 1
+
+
+
+def test_mass_unit_aliases_are_normalised_to_milligrams():
+    from app.composition import component_signature
+
+    mg = component("Ingredient A", "500", "mg", confidence=0.95)
+    mcg = component("Ingredient A", "500000", "mcg", confidence=0.95)
+    assert component_signature([mg], require_confidence=True) == component_signature(
+        [mcg], require_confidence=True
+    )
+
+
+def test_second_page_is_not_sliced_twice_by_matcher():
+    second_page_products = [
+        product(
+            f"page-2-{index}",
+            f"Page 2 Brand {index}",
+            [component("Paracetamol", "500"), component("Caffeine", "30")],
+        )
+        for index in range(3)
+    ]
+    result = CompositionGroupMatcher().match(
+        scanned_extraction(),
+        second_page_products,
+        scan_id="scan-page-2",
+        page=2,
+        page_size=50,
+    )
+    assert result.page == 2
+    assert result.matches_in_page == 3
+    assert len(result.matches) == 3
