@@ -114,7 +114,7 @@ export interface CompositionMatchResponse {
   scan_id: string;
   status: "matches_found" | "no_matches" | "unable_to_compare";
   composition_signature?: string | null;
-  total_matches: number;
+  matches_in_page: number;
   page: number;
   page_size: number;
   matches: CompositionMatchCandidate[];
