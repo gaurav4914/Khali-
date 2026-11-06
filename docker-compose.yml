@@ -1,0 +1,17 @@
+services:
+  medicine-engine:
+    build: .
+    image: medicine-photo-intelligence-engine:0.1.0
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+      - /app/runtime/uploads:size=256m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

@@ -1,0 +1,12 @@
+{
+  "name": "@medicine-intelligence/react-native-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Typed REST client for the self-hosted Medicine Photo Intelligence Engine",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "peerDependencies": {
+    "react-native": ">=0.72"
+  },
+  "dependencies": {}
+}
