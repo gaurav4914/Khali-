@@ -19,12 +19,17 @@ class Settings(BaseSettings):
     ocr_provider: str = "tesseract"
     ocr_languages: str = "eng+hin"
 
+    vision_provider: str = "disabled"
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-3.8-flash"
+
     catalogue_mode: str = "none"
     catalogue_base_url: str | None = None
     catalogue_api_key: str | None = None
     catalogue_timeout_seconds: float = Field(default=8.0, ge=1.0, le=30.0)
+    ingredient_mapping_version: str = "2026.11-strict-literal-v1"
 
-    cors_origins: str = "http://localhost:19006,http://localhost:8081"
+    cors_origins: str = "http://localhost:3000,http://localhost:19006,http://localhost:8081"
 
     @property
     def allowed_origins(self) -> list[str]:

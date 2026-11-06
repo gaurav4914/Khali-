@@ -1403,6 +1403,14 @@ The following files already exist and must be reviewed before changes:
 
 Do not claim the product is production-ready just because the basic unit tests pass.
 
+### 32.2 Implementation and audit update (v0.3.0)
+
+- **Structured Composition Contract (`schemas.py`, `sdk/react-native/src/types.ts`, `src/engine/composition.ts`):** Extended `CompositionComponent` with `ingredient_name_printed`, `ingredient_name_normalised`, `strength_amount`, `strength_basis_amount`, `strength_basis_unit`, `source_capture_id`, and `provenance`. Distinctly separates `per tablet`, `per 5 mL`, `per mL`, `% w/w`, and `IU` (never converting `IU` or `%` to mass).
+- **Exact Composition-Group Matcher (`composition.py`, `src/engine/composition.ts`):** Full-set active component comparison, order-independent sorting, excipient exclusion, explicit formulation comparison labels (`same active composition; formulation details match`, `same active composition; dosage form differs`, `same active composition; release type differs`, `same active composition; route differs`), separate `exact_matches` and `formulation_difference_matches` lists, `has_more`/`next_cursor` pagination without double-slicing, and mandatory `informational_notice`.
+- **Multi-Line & Hindi/English Extraction (`extraction.py`, `src/engine/extraction.ts`):** Added `Each 5 ml contains` / `Each tablet contains` / `प्रत्येक टैबलेट में` basis inheritance, pharmacopoeia suffix stripping (`IP`/`BP`/`USP`), dosage form/release/route parsing, excipient stop boundaries (`Excipients`/`सहायक घटक`), and cross-capture conflict detection.
+- **Buyer-Configured Vision Provider (`backend/app/providers/vision.py`, `server.ts`):** Added `GeminiVisionProvider` using buyer-supplied `GEMINI_API_KEY` and configurable model (`gemini-3.8-flash`) with automatic fallback to local OCR when disabled or unavailable.
+- **Synthetic Buyer Catalogue & Guided Scanner Reference UI (`server.ts`, `src/App.tsx`, `sdk/react-native/src/scanner.ts`):** Implemented the runnable full-stack engine on port 3000 with Guided Scanner Screens S0–S6, adaptive retake/close-up routing, capture deletion on retake (`DELETE /v1/scans/{scan_id}/captures/{capture_id}`), synthetic buyer REST catalogue service (`/v1/buyer-mock/*`), and Buyer Operational Configuration Panel (`/v1/admin/config`).
+
 ## 33. Implementation sequence for the next AI coding session
 
 1. Read this entire `PROJECT_PLAN.md`. It is the single master requirements and planning document. Then read `README.md` and the technical guides under `docs/`.

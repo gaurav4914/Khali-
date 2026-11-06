@@ -1,6 +1,7 @@
 import type {
   CaptureResponse,
   CaptureStep,
+  CatalogueProduct,
   CatalogueResolveResponse,
   CompositionMatchResponse,
   CreateScanResponse,
@@ -10,6 +11,7 @@ import type {
 export interface MedicineEngineClientOptions {
   baseUrl: string;
   apiKey?: string;
+  accessToken?: string;
   fetcher?: typeof fetch;
 }
 
@@ -27,17 +29,26 @@ export class MedicineEngineError extends Error {
 export class MedicineEngineClient {
   private readonly baseUrl: string;
   private readonly apiKey?: string;
+  private readonly accessToken?: string;
   private readonly fetcher: typeof fetch;
 
   constructor(options: MedicineEngineClientOptions) {
     if (!options.baseUrl) throw new Error("Medicine Engine baseUrl is required.");
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.apiKey = options.apiKey;
+    this.accessToken = options.accessToken;
     this.fetcher = options.fetcher ?? fetch;
   }
 
   private headers(): Record<string, string> {
-    return this.apiKey ? { "X-API-Key": this.apiKey } : {};
+    const out: Record<string, string> = {};
+    if (this.apiKey) {
+      out["X-API-Key"] = this.apiKey;
+    }
+    if (this.accessToken) {
+      out["Authorization"] = `Bearer ${this.accessToken}`;
+    }
+    return out;
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -76,20 +87,33 @@ export class MedicineEngineClient {
   async uploadMedicineImage(
     scanId: string,
     step: CaptureStep,
-    imageUri: string,
+    imageUriOrBlob: string | Blob,
     contentType: "image/jpeg" | "image/png" | "image/webp" = "image/jpeg",
+    hintKey?: string,
   ): Promise<CaptureResponse> {
-    const extension = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
+    const extension =
+      contentType === "image/png"
+        ? "png"
+        : contentType === "image/webp"
+          ? "webp"
+          : "jpg";
     const form = new FormData();
     form.append("step", step);
-    form.append(
-      "image",
-      {
-        uri: imageUri,
-        name: `${step}.${extension}`,
-        type: contentType,
-      } as unknown as Blob,
-    );
+    if (hintKey) {
+      form.append("pack_preset", hintKey);
+    }
+    if (typeof imageUriOrBlob === "string") {
+      form.append(
+        "image",
+        {
+          uri: imageUriOrBlob,
+          name: `${step}.${extension}`,
+          type: contentType,
+        } as unknown as Blob,
+      );
+    } else {
+      form.append("image", imageUriOrBlob, `${step}.${extension}`);
+    }
 
     return this.request(`/v1/scans/${encodeURIComponent(scanId)}/captures`, {
       method: "POST",
@@ -134,6 +158,12 @@ export class MedicineEngineClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ scan_id: scanId, page, page_size: pageSize }),
     });
+  }
+
+  getCatalogueProduct(productId: string): Promise<CatalogueProduct> {
+    return this.request(
+      `/v1/catalogue/products/${encodeURIComponent(productId)}`,
+    );
   }
 
   removeCapture(scanId: string, captureId: string): Promise<void> {

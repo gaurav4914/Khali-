@@ -1,0 +1,10 @@
+{
+  "name": "Medicine Photo Intelligence Engine",
+  "description": "Self-hosted B2B medicine-pack guided camera scanner, OCR/Vision structured extraction, exact product identity resolver, and buyer-catalogue composition matching engine.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

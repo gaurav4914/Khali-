@@ -11,6 +11,7 @@ from .catalogue import (
     CatalogueAdapterError,
     EmptyCatalogueAdapter,
     RestCatalogueAdapter,
+    SyntheticBuyerCatalogueAdapter,
 )
 from .composition import CompositionGroupMatcher, CompositionNotComparable, component_signature
 from .config import Settings, get_settings
@@ -50,7 +51,8 @@ def create_app(
         raise ValueError("API_KEY is required when ENVIRONMENT=production.")
 
     if catalogue_adapter is None:
-        if cfg.catalogue_mode.lower() == "rest":
+        mode = cfg.catalogue_mode.lower()
+        if mode == "rest":
             if not cfg.catalogue_base_url:
                 raise ValueError("CATALOGUE_BASE_URL is required when CATALOGUE_MODE=rest.")
             catalogue_adapter = RestCatalogueAdapter(
@@ -58,6 +60,8 @@ def create_app(
                 cfg.catalogue_api_key,
                 cfg.catalogue_timeout_seconds,
             )
+        elif mode == "synthetic":
+            catalogue_adapter = SyntheticBuyerCatalogueAdapter()
         else:
             catalogue_adapter = EmptyCatalogueAdapter()
 
@@ -70,7 +74,9 @@ def create_app(
 
     store = InMemoryScanStore(cfg.upload_dir, cfg.scan_ttl_seconds)
     resolver = ExactProductIdentityResolver()
-    composition_matcher = CompositionGroupMatcher()
+    composition_matcher = CompositionGroupMatcher(
+        mapping_version=cfg.ingredient_mapping_version
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -79,7 +85,7 @@ def create_app(
 
     app = FastAPI(
         title=cfg.app_name,
-        version="0.2.0",
+        version="0.3.0",
         description=(
             "Self-hosted medicine-pack OCR, exact product identity, and buyer-catalogue "
             "composition-group discovery API. Catalogue matches are not clinical recommendations."
@@ -123,9 +129,17 @@ def create_app(
             "scan_store": "ready",
             "ocr_provider": "configured",
             "catalogue_adapter": "configured",
+            "vision_provider": "configured" if cfg.vision_provider != "disabled" else "disabled",
         }
-        ok = all(value in {"ready", "configured"} for value in checks.values())
-        return ReadinessResponse(status="ready" if ok else "degraded", checks=checks)
+        ok = all(value in {"ready", "configured", "disabled"} for value in checks.values())
+        return ReadinessResponse(
+            status="ready" if ok else "degraded",
+            checks=checks,
+            details={
+                "external_image_transfer": cfg.vision_provider != "disabled",
+                "mapping_version": cfg.ingredient_mapping_version,
+            },
+        )
 
     @app.post(
         "/v1/scans",
@@ -165,26 +179,37 @@ def create_app(
     ):
         store.get(scan_id)
         if image.content_type not in {"image/jpeg", "image/png", "image/webp"}:
-            raise HTTPException(415, detail={
-                "code": "unsupported_media_type",
-                "message": "Upload a JPEG, PNG, or WEBP image.",
-            })
+            raise HTTPException(
+                415,
+                detail={
+                    "code": "unsupported_media_type",
+                    "message": "Upload a JPEG, PNG, or WEBP image.",
+                },
+            )
         data = await image.read(cfg.max_upload_bytes + 1)
         if len(data) > cfg.max_upload_bytes:
-            raise HTTPException(413, detail={
-                "code": "image_too_large",
-                "message": f"Image exceeds the {cfg.max_upload_bytes} byte upload limit.",
-            })
-        try:
-            quality = inspect_image(data)
-        except InvalidImageError as exc:
-            raise HTTPException(422, detail={
-                "code": "invalid_image",
-                "message": str(exc),
-            }) from exc
-
+            raise HTTPException(
+                413,
+                detail={
+                    "code": "image_too_large",
+                    "message": f"Image exceeds the {cfg.max_upload_bytes} byte upload limit.",
+                },
+            )
         capture_id = str(uuid4())
-        suffix = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}[image.content_type]
+        try:
+            quality = inspect_image(data, capture_id=capture_id, step=step.value)
+        except InvalidImageError as exc:
+            raise HTTPException(
+                422,
+                detail={
+                    "code": "invalid_image",
+                    "message": str(exc),
+                },
+            ) from exc
+
+        suffix = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}[
+            image.content_type
+        ]
         filename = f"{capture_id}{suffix}"
         target = cfg.upload_dir / filename
         cfg.upload_dir.mkdir(parents=True, exist_ok=True)
@@ -213,10 +238,13 @@ def create_app(
     async def delete_capture(scan_id: str, capture_id: str):
         removed = store.remove_capture(scan_id, capture_id)
         if not removed:
-            raise HTTPException(404, detail={
-                "code": "capture_not_found",
-                "message": "Capture not found or already removed.",
-            })
+            raise HTTPException(
+                404,
+                detail={
+                    "code": "capture_not_found",
+                    "message": "Capture not found or already removed.",
+                },
+            )
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.post(
@@ -228,15 +256,20 @@ def create_app(
     async def quality_check(scan_id: str, capture_id: str):
         path = store.capture_path(scan_id, capture_id)
         if path is None:
-            raise HTTPException(404, detail={
-                "code": "capture_not_found",
-                "message": "Capture not found or expired.",
-            })
+            raise HTTPException(
+                404,
+                detail={
+                    "code": "capture_not_found",
+                    "message": "Capture not found or expired.",
+                },
+            )
         try:
             data = await run_in_threadpool(path.read_bytes)
-            return inspect_image(data)
+            return inspect_image(data, capture_id=capture_id)
         except InvalidImageError as exc:
-            raise HTTPException(422, detail={"code": "invalid_image", "message": str(exc)}) from exc
+            raise HTTPException(
+                422, detail={"code": "invalid_image", "message": str(exc)}
+            ) from exc
 
     @app.post(
         "/v1/scans/{scan_id}/recognise",
@@ -247,10 +280,13 @@ def create_app(
     async def recognise(scan_id: str):
         session = store.get(scan_id)
         if not session.captures:
-            raise HTTPException(409, detail={
-                "code": "no_captures",
-                "message": "Upload at least one packaging photo before recognition.",
-            })
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "no_captures",
+                    "message": "Upload at least one packaging photo before recognition.",
+                },
+            )
         documents = []
         for capture in session.captures:
             path = store.capture_path(scan_id, capture.capture_id)
@@ -259,10 +295,13 @@ def create_app(
             try:
                 document = await run_in_threadpool(app.state.ocr.read_text, path)
             except RuntimeError as exc:
-                raise HTTPException(503, detail={
-                    "code": "ocr_provider_unavailable",
-                    "message": str(exc),
-                }) from exc
+                raise HTTPException(
+                    503,
+                    detail={
+                        "code": "ocr_provider_unavailable",
+                        "message": str(exc),
+                    },
+                ) from exc
             documents.append((capture.capture_id, document))
         extraction = extract_printed_fields(documents)
         store.set_extraction(scan_id, extraction)
@@ -277,10 +316,13 @@ def create_app(
     async def resolve_catalogue(request: CatalogueResolveRequest):
         session = store.get(request.scan_id)
         if session.extraction is None:
-            raise HTTPException(409, detail={
-                "code": "recognition_required",
-                "message": "Run recognition before resolving a catalogue identity.",
-            })
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "recognition_required",
+                    "message": "Run recognition before resolving a catalogue identity.",
+                },
+            )
         name = session.extraction.printed_product_name.value
         if not name and not request.barcode:
             return CatalogueResolveResponse(
@@ -291,10 +333,13 @@ def create_app(
         try:
             products = await app.state.catalogue.search(query=name, barcode=request.barcode)
         except CatalogueAdapterError as exc:
-            raise HTTPException(502, detail={
-                "code": "catalogue_unavailable",
-                "message": str(exc),
-            }) from exc
+            raise HTTPException(
+                502,
+                detail={
+                    "code": "catalogue_unavailable",
+                    "message": str(exc),
+                },
+            ) from exc
 
         if not products:
             return CatalogueResolveResponse(
@@ -333,10 +378,13 @@ def create_app(
     async def composition_matches(request: CompositionMatchRequest):
         session = store.get(request.scan_id)
         if session.extraction is None:
-            raise HTTPException(409, detail={
-                "code": "recognition_required",
-                "message": "Run recognition before composition-group search.",
-            })
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "recognition_required",
+                    "message": "Run recognition before composition-group search.",
+                },
+            )
 
         try:
             component_signature(
@@ -346,9 +394,11 @@ def create_app(
         except CompositionNotComparable as exc:
             return CompositionMatchResponse(
                 scan_id=request.scan_id,
+                composition_parse_status=session.extraction.composition_parse_status or "unable_to_compare",
                 status=CompositionSearchStatus.UNABLE_TO_COMPARE,
                 page=request.page,
                 page_size=request.page_size,
+                mapping_version=cfg.ingredient_mapping_version,
                 message=str(exc),
             )
 
@@ -359,10 +409,13 @@ def create_app(
                 page_size=request.page_size,
             )
         except CatalogueAdapterError as exc:
-            raise HTTPException(502, detail={
-                "code": "catalogue_unavailable",
-                "message": str(exc),
-            }) from exc
+            raise HTTPException(
+                502,
+                detail={
+                    "code": "catalogue_unavailable",
+                    "message": str(exc),
+                },
+            ) from exc
 
         return composition_matcher.match(
             session.extraction,
@@ -370,6 +423,7 @@ def create_app(
             scan_id=request.scan_id,
             page=request.page,
             page_size=request.page_size,
+            has_more=len(products) >= request.page_size,
         )
 
     @app.get(
@@ -381,15 +435,21 @@ def create_app(
         try:
             product = await app.state.catalogue.get_product(product_id)
         except CatalogueAdapterError as exc:
-            raise HTTPException(502, detail={
-                "code": "catalogue_unavailable",
-                "message": str(exc),
-            }) from exc
+            raise HTTPException(
+                502,
+                detail={
+                    "code": "catalogue_unavailable",
+                    "message": str(exc),
+                },
+            ) from exc
         if product is None:
-            raise HTTPException(404, detail={
-                "code": "catalogue_product_not_found",
-                "message": "The buyer catalogue did not return this product.",
-            })
+            raise HTTPException(
+                404,
+                detail={
+                    "code": "catalogue_product_not_found",
+                    "message": "The buyer catalogue did not return this product.",
+                },
+            )
         return product
 
     return app

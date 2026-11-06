@@ -1,47 +1,55 @@
-# React Native / Expo API Client
+# React Native / Expo SDK & Guided Scanner Module
 
-The package in `sdk/react-native` is a typed HTTP client. It is **not yet a camera UI component**. The host application owns camera permission and capture UI until the guided scanner component is implemented.
+The package in `sdk/react-native` provides both the typed HTTP client (`MedicineEngineClient`) and the adaptive guided capture state machine (`evaluateCaptureReviewBanner`, `determineNextGuidedStage`) used across the S0–S6 scanner workflow.
 
-## API client example
+## API client & guided scanner example
 
 ```ts
-import { MedicineEngineClient } from "./sdk/react-native/src";
+import {
+  MedicineEngineClient,
+  evaluateCaptureReviewBanner,
+  determineNextGuidedStage,
+} from "./sdk/react-native/src";
 
 const engine = new MedicineEngineClient({
   baseUrl: "https://buyer-owned-engine.example",
-  // Use this from a trusted buyer backend. Do not embed a permanent server key in a mobile app.
-  apiKey: "buyer-issued-app-or-session-key",
+  // Use short-lived scoped tokens or a trusted buyer backend proxy.
+  // Never embed a permanent server key in a distributed mobile binary.
+  accessToken: "buyer-issued-short-lived-session-token",
 });
 
 const session = await engine.createScanSession();
-// Capture front/composition/back photos with the host app's camera.
 const capture = await engine.uploadMedicineImage(
   session.scan_id,
   "front",
   selectedImageUri,
 );
+
+const banner = evaluateCaptureReviewBanner(capture.quality);
+if (!banner.canProceed) {
+  await engine.removeCapture(session.scan_id, capture.capture_id);
+}
+
 const extraction = await engine.recogniseMedicine(session.scan_id);
 const exactIdentity = await engine.resolveProductIdentity(session.scan_id);
-const compositionGroup = await engine.findCompositionMatches(session.scan_id);
-console.log(compositionGroup.matches);
-await engine.removeCapture(session.scan_id, capture.capture_id);
+const compositionGroup = await engine.findCompositionMatches(session.scan_id, 1, 50);
 ```
 
-## Current API methods
+## Exported SDK methods and helpers
 
 - `createScanSession()`
-- `uploadMedicineImage(scanId, step, imageUri, contentType?)`
+- `uploadMedicineImage(scanId, step, imageUriOrBlob, contentType?, hintKey?)`
 - `checkImageQuality(scanId, captureId)`
 - `recogniseMedicine(scanId)`
 - `resolveProductIdentity(scanId, barcode?)`
 - `findCompositionMatches(scanId, page?, pageSize?)`
+- `getCatalogueProduct(productId)`
 - `removeCapture(scanId, captureId)`
 - `getScanResult(scanId)`
+- `evaluateCaptureReviewBanner(qualityReport)`
+- `determineNextGuidedStage({ completedSteps, latestCapture, extraction, config })`
 
-## React Native upload note
+## Security & clinical boundary notes
 
-React Native's `FormData` supports a URI-backed file descriptor. The client uses this approach so the app does not need to read a local `file://` URI through browser fetch.
-
-Never put a buyer's permanent catalogue credential or server-to-server AI key in a mobile application. Use the buyer app's backend to call the self-hosted engine and keep service credentials server-side.
-
-Composition-group results are catalogue data only. The host app should retain the API's review notice and should not present a composition match as a patient-specific instruction to change treatment.
+- Never put a buyer's permanent catalogue credential or server-to-server AI key in a mobile binary.
+- Composition-group results are catalogue data only. Always display `compositionGroup.informational_notice` and never present a composition match as a patient-specific instruction to switch treatment.
