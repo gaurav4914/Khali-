@@ -1,7 +1,7 @@
 # Medicine Photo Intelligence Engine — Master Project Plan
 
 > Document: Product requirements, scanner UX, technical architecture, API contracts, deployment model, safety boundaries, and implementation roadmap  
-> Version: 1.1  
+> Version: 1.2  
 > Status: Revised product requirements — implementation foundation exists; composition-group engine is the next core milestone  
 > Repository: gaurav4914/Khali-  
 > Product model: Self-hosted B2B software, licensed repeatedly to multiple buyers  
@@ -1040,7 +1040,7 @@ The product is ready for a first controlled buyer evaluation only when all of th
 | Brand grouping | Buyer-provided reference-brand / other-brand metadata only |
 | Clinical decision | Never automated; catalogue match is not a prescription or switch instruction |
 | Licence activation server | Not required in first release |
-| Implementation status | Planning only; coding starts after plan review |
+| Implementation status | Partial backend/API and composition-group foundation exists; full scanner SDK, production adapters, persistence and sale-ready validation remain |
 
 ---
 
@@ -1048,18 +1048,376 @@ The product is ready for a first controlled buyer evaluation only when all of th
 
 When implementation is authorised, begin in this order:
 
-1. Create repository documentation and architecture decisions.
-2. Define the canonical scan and catalogue data contracts.
-3. Build API skeleton, health endpoint, and mock provider.
-4. Build the React Native/Expo scanner sample with the exact screens described above.
-5. Add image-quality checks and targeted retry.
-6. Add OCR and structured extraction.
-7. Add the buyer catalogue adapter and test fixture.
-8. Add exact-product identity resolution and explainability.
-9. Add structured composition parsing, buyer-catalogue composition search, and strict multi-record result grouping.
-10. Add the buyer configuration panel.
-11. Package with Docker, tests, and installation documentation.
+1. Audit the existing repository and reconcile code with this plan before changing files.
+2. Fix existing failing tests and implementation/contract mismatches.
+3. Finalise canonical scan, per-ingredient strength and buyer-catalogue contracts.
+4. Complete conservative OCR composition-component extraction with provenance and uncertainty handling.
+5. Complete exact product identity and exact composition-group discovery as separate API operations.
+6. Build the Expo guided scanner demo and reusable SDK UI, including adaptive retakes.
+7. Add the buyer-configured Vision provider adapter using buyer-owned credentials.
+8. Add buyer configuration/admin UI and adapter field mapping.
+9. Add customer-managed temporary/persistent session storage options and multi-replica support.
+10. Complete Docker deployment, end-to-end tests, security review, documentation and release packaging.
 
 Do not start with a central catalogue, subscription billing, user accounts, or a cloud service operated by the original developer.
 
 **Core product promise:** a buyer receives a complete, self-hosted scanner and exact-product identity engine that can be integrated into its own app, connected to its own catalogue, and operated using its own infrastructure and provider accounts.
+
+
+---
+
+## 23. Owner's requirement — plain-language product definition
+
+The user is commissioning a **technology product to sell to existing pharmacy/medicine applications**, not a separate consumer app.
+
+A person using a buyer's existing app photographs a medicine pack. Our scanner reads the printed product identity and composition. The engine then queries the buyer's own catalogue and returns:
+
+1. The exact catalogue product shown in the photo, when it can be identified.
+2. A separate group containing **all catalogue records with the same complete, structured active-ingredient set and the same per-ingredient strength**, when the buyer's catalogue contains such records.
+3. The buyer-provided brand classification for those records (for example, reference brand / other brand), if the buyer maintains that field.
+4. Clear differences or missing information (dosage form, release type, route, pack size, manufacturer, etc.).
+
+Example using synthetic names only:
+
+- Scanned label: Ingredient A 500 mg + Ingredient B 10 mg.
+- Buyer catalogue record 1: reference brand with the same complete active composition.
+- Buyer catalogue record 2: another brand with the same complete active composition.
+- Engine result: both catalogue records appear under the same recorded-composition group, separately labelled and with their actual product names.
+
+The engine does not invent a second product if the buyer's catalogue does not contain it. It does not assume there will always be exactly two results. The number of matches is determined by the buyer's catalogue and the exact comparison rules.
+
+A composition match is a catalogue/data match only. It is not a statement that a product is suitable for a particular patient or a direction to switch treatment. This distinction must be visible in API wording and UI copy.
+
+## 24. Scanner UI — implementation-level screen specification
+
+The complete camera experience is a required deliverable, not merely an API client. Build it as an Expo-compatible React Native scanner module and a runnable sample host app.
+
+### 24.1 Screen S0 — scanner entry
+
+- App-bar title: `Scan medicine pack`.
+- Short instruction: `Keep the pack inside the frame. We will guide you if another photo is needed.`
+- Primary button: `Start scan`.
+- Secondary action: `Choose photo` only if the buyer enables gallery import.
+- Privacy note must be configurable by the buyer and must say whether image bytes leave the buyer's infrastructure for the selected AI/OCR provider.
+- Request camera permission only after a clear user action.
+- If permission is denied, explain how to enable it in device settings and allow closing the scanner.
+
+### 24.2 Screen S1 — front photo
+
+- Live preview takes most of the screen.
+- Large rounded guide frame, with a pack outline / alignment hint.
+- Top: close, progress (for example, `Photo 1 of 2`), help.
+- Bottom: torch, capture, gallery (optional), camera switch (when supported).
+- Guidance: `Show the full front of the pack.`
+- Show a live focus indicator where supported.
+- Do not ask the user to photograph every side by default.
+
+### 24.3 Screen S2 — capture review
+
+Display the captured image with one of:
+- `Clear enough`
+- `Try again — image is blurred`
+- `Need a closer photo — text is too small`
+- `Move the pack into the frame`
+- `Reduce glare by slightly changing the angle`
+
+Actions: `Retake` and `Use photo`. Retake must remove/replace the previous capture rather than accumulating duplicate images.
+
+### 24.4 Screen S3 — targeted composition close-up
+
+Show only when the composition text was not captured clearly in S1 or the OCR result is incomplete.
+
+Guidance: `Bring the printed composition details closer. Keep all lines inside the frame.`
+
+- Focus the guide rectangle on the text area rather than the whole pack.
+- Do not require a 3D scan or arbitrary left/right rotations.
+- Allow a second close-up only when the first remains unreadable.
+
+### 24.5 Screen S4 — back/side photo
+
+Request only when a missing field could reasonably be printed on another side (for example, manufacturer or additional product identifier). Explain the reason in plain language.
+
+### 24.6 Screen S5 — processing
+
+Show stages:
+1. Checking photo quality.
+2. Reading printed text.
+3. Checking the buyer's catalogue.
+4. Preparing the result.
+
+Show progress and a cancel action. Keep the captures available for retry until the scan expires or the user cancels.
+
+### 24.7 Screen S6 — results
+
+Separate the result into two sections:
+
+**A. Exact product identity**
+- Exact product record, likely identity requiring review, multiple possible records, no record, or unable to identify.
+
+**B. Same recorded active composition in this catalogue**
+- Show every matching buyer-catalogue record returned across pages.
+- Show brand label only from buyer metadata.
+- Display each record's actual composition components and strengths.
+- Display dosage form, release type, route, manufacturer and other known differences.
+- If composition cannot be parsed confidently, show `Composition could not be compared`, not a guessed list.
+
+Keep a persistent, readable notice: `Catalogue composition matches are informational. They do not determine whether a medicine is suitable for an individual. Ask a qualified pharmacist or prescriber before making any treatment change.`
+
+Never use `Take this instead`, `Safe substitute`, or a medicine-switch button.
+
+## 25. Composition data model — mandatory precision
+
+A single free-text field such as `Ingredient A 500 mg + Ingredient B 10 mg` is not enough for reliable comparison. Both scanned data and buyer catalogue data need structured component arrays.
+
+Each component must preserve:
+
+- `ingredient_name_printed`: literal label text.
+- `ingredient_name_normalised`: conservative normalised name.
+- `ingredient_key`: optional buyer-owned canonical identifier.
+- `ingredient_role`: `active`, `inactive`, or `unknown`.
+- `strength_amount`: decimal string, not a floating-point number.
+- `strength_unit`: mg, mcg, g, IU, %, etc.
+- `strength_basis_amount`: optional denominator amount (for example 5).
+- `strength_basis_unit`: optional denominator unit (for example mL).
+- `confidence`: field-level extraction confidence.
+- `source_capture_id`: which photo supplied the value.
+- `source_text`: OCR text span supporting the value.
+
+Examples of strength expressions that must remain distinct:
+- 5 mg per tablet.
+- 5 mg per 5 mL.
+- 5 mg per mL.
+- 5% w/w.
+- 500 IU.
+
+The matcher must not compare these as if they were interchangeable quantities. Unit conversion is allowed only when deterministic and the basis is identical or a safe, explicitly implemented conversion is available. IU must not be converted to mass without a substance-specific authoritative conversion table supplied and reviewed by the buyer.
+
+### 25.1 Active/inactive distinction
+
+- Only components reliably marked active are included in the active-composition signature.
+- Excipients/inactive ingredients must not be treated as active.
+- A generic `Composition` heading alone may be ambiguous. Do not automatically mark every parsed line as active.
+- Prefer explicit `Active ingredients` or a clear `Each tablet/capsule/dose contains` context.
+- If active/inactive status remains unknown, request a better image or mark the composition uncomparable.
+
+### 25.2 Normalisation rules
+
+Allowed by default:
+- Unicode normalisation.
+- Case and harmless whitespace/punctuation normalisation.
+- Decimal formatting such as `0.5 g` to `500 mg`, where exact deterministic conversion applies.
+- Ingredient order independence for combination products.
+
+Not allowed by default:
+- Guessing synonyms.
+- Merging salt forms or chemical forms.
+- Guessing missing strength.
+- Treating a partial set as a full match.
+- Treating two different release mechanisms as the same formulation.
+- Using an AI confidence score as proof of equivalence.
+
+Synonym/canonical ingredient mapping must come from a buyer-approved, versioned mapping table. Record the mapping version in the comparison result.
+
+## 26. Exact composition-group comparison contract
+
+The primary query is not a fuzzy similarity search. It is a complete-set comparison.
+
+1. Build a scan signature from every confirmed active ingredient and its full strength expression.
+2. Build a catalogue signature from every active component in each returned catalogue record.
+3. Sort components so ingredient order does not matter.
+4. Require the same number of active components.
+5. Require every ingredient identity/key to match under the approved normalisation/mapping rules.
+6. Require the strength amount, unit, and basis to match after allowed deterministic conversions.
+7. Reject a record if it has an extra active ingredient or is missing one.
+8. Keep inactive ingredients outside the active signature.
+9. Verify every catalogue result again inside our engine, even if the buyer API claims to filter correctly.
+10. Return every verified match across pages, not just the first result.
+
+Dosage form, release type, and route must be separately compared and shown. If the active-component signature matches but one of these attributes differs, place the record in a clearly labelled `composition match — formulation details differ` subgroup. Do not hide the difference or merge it into the exact-formulation subgroup.
+
+The engine must return:
+- `matches_found`
+- `no_matches`
+- `unable_to_compare`
+- `catalogue_unavailable` (API error)
+
+A low-confidence or incomplete scan must never be converted into a confident no-match result. It is `unable_to_compare`.
+
+## 27. Buyer catalogue adapter — complete integration rules
+
+### 27.1 Preferred first integration
+
+Implement the buyer-provided REST API adapter first. It is safer and easier to sell than asking every buyer to expose its database credentials.
+
+The buyer API should provide:
+- Exact product lookup by barcode or identifier.
+- Exact product lookup by printed-name candidates.
+- Structured composition search with pagination.
+- Full product detail lookup.
+- Read-only access to brand classification and display metadata.
+
+### 27.2 SQL integration
+
+A direct SQL adapter is a later optional module:
+- Read-only database user.
+- Buyer-approved view/schema mapping.
+- Parameterised queries only.
+- No arbitrary SQL generated from OCR or AI text.
+- Connection secrets remain in buyer infrastructure.
+- No writes or migrations against the buyer database.
+
+### 27.3 Pagination
+
+The buyer adapter must return:
+- Current page records.
+- `page`, `page_size`.
+- `has_more` or a `next_cursor` supplied by the buyer API.
+
+Do not slice the same page twice. The matcher verifies the records returned for that page and returns a page-scoped result count. The SDK must expose page continuation clearly.
+
+### 27.4 Catalogue record minimum
+
+A composition-search record needs:
+- `product_id`.
+- `display_name`.
+- `brand_name` (nullable).
+- `brand_category` (`reference`, `other`, `unknown`).
+- `composition_components[]` with complete active component data.
+- Dosage form.
+- Release type.
+- Route.
+- Manufacturer.
+- Product status/update timestamp.
+
+If a buyer only has a free-text composition string, provide a buyer-side mapping/normalisation process or return `unable_to_compare`. Never guess missing component data.
+
+## 28. Public API contract — version 1
+
+All request and response schemas must be published in the generated OpenAPI document. The following endpoint names are the baseline:
+
+- `POST /v1/scans`
+- `POST /v1/scans/{scan_id}/captures`
+- `DELETE /v1/scans/{scan_id}/captures/{capture_id}`
+- `POST /v1/scans/{scan_id}/quality-check`
+- `POST /v1/scans/{scan_id}/recognise`
+- `GET /v1/scans/{scan_id}`
+- `POST /v1/catalogue/resolve`
+- `POST /v1/catalogue/composition-matches`
+- `GET /v1/catalogue/products/{product_id}`
+- `GET /v1/health`
+- `GET /v1/ready`
+
+The composition-matches response must include:
+- scan ID and request ID.
+- scan composition parse status.
+- match status.
+- page/page_size/has_more or next cursor.
+- page-scoped number of verified results.
+- separate exact active-composition group and formulation-difference group.
+- complete product catalogue records as buyer permitted.
+- matched component list.
+- different/missing fields.
+- mapping/normalisation version.
+- professional-review notice.
+
+No permanent server API key may be shipped in a mobile binary. The buyer's backend should call the self-hosted engine or issue narrowly scoped short-lived tokens.
+
+## 29. AI and OCR provider policy
+
+- Local Tesseract is the baseline provider and must work without internet.
+- Optional Gemini Vision adapter is configurable through environment settings and buyer-owned API credentials.
+- Additional providers may be plugged in behind the same interface.
+- Never hard-code a personal developer API key.
+- Never commit buyer keys to Git.
+- Model output must be schema-validated.
+- Request literal visible text, not invented completions.
+- Keep OCR output and AI output separate with provenance.
+- If they disagree on ingredient name, strength, unit, or basis, flag conflict and request a targeted retake or human review.
+- Model failure must not break local OCR or delete the captured image.
+- Show the buyer whether image bytes are sent to an external provider.
+
+## 30. Storage and buyer-owned runtime
+
+The product has no shared medicine catalogue and no central developer-operated production API.
+
+A buyer installation may still need temporary scan-session state and temporary image files. These are buyer-owned runtime data, not our medicine database.
+
+- Current in-memory ScanStore is one process only.
+- Add a storage interface so the buyer can choose local ephemeral storage or its own Redis/PostgreSQL/object storage for multi-replica deployments.
+- Default image retention should be short and configurable.
+- Delete rejected captures, expired scans, and temporary files.
+- Do not save customer catalogue rows permanently.
+- Caching is opt-in, buyer-controlled, short-lived, and invalidatable.
+- Do not send analytics, images, or catalogue information to the original developer.
+
+## 31. Commercial delivery and repeatable licensing
+
+Deliver one product package that can be sold repeatedly under a non-exclusive agreement.
+
+Each buyer gets:
+- Backend source and build artefacts.
+- Scanner SDK and demo app.
+- API/OpenAPI documentation.
+- Docker deployment bundle.
+- Buyer adapter contract.
+- Environment template.
+- Test suite and synthetic sample data.
+- Installation and upgrade manuals.
+- Software licence document/template.
+
+The buyer pays for its own hosting, storage, database access, AI/OCR provider usage, and operation. We do not need a central billing server, subscription backend, or activation server in the first edition.
+
+Do not promise lifetime free upgrades or indefinite support unless that is explicitly agreed in the buyer's sale terms. The developer retains the right to sell the same non-exclusive product to other buyers unless a separately negotiated exclusive assignment is made.
+
+## 32. Existing repository audit — baseline for the next developer
+
+The following files already exist and must be reviewed before changes:
+
+- `backend/app/main.py`: FastAPI endpoints and dependency wiring.
+- `backend/app/schemas.py`: scan, capture, catalogue and result data contracts.
+- `backend/app/extraction.py`: OCR text and early multi-component parsing.
+- `backend/app/composition.py`: strict structured composition-group matching.
+- `backend/app/catalogue.py`: buyer read-only REST adapter.
+- `backend/app/identity.py`: exact photographed-product identity.
+- `backend/app/quality.py` and `preprocess.py`: initial image checks/pre-processing.
+- `backend/app/ocr.py`: OCR abstraction and Tesseract/mock implementation.
+- `backend/app/store.py`: temporary in-memory scan session store.
+- `sdk/react-native/src/client.ts` and `types.ts`: typed API client.
+- `tests/`: initial API, identity, composition, extraction, quality, and preprocessing tests.
+- `docs/`, `README.md`, `IMPLEMENTATION_STATUS.md`: installation, API and project notes.
+
+### 32.1 Known gaps to verify/fix
+
+- Full React Native/Expo guided camera screens are not complete; the current package is primarily a typed API client.
+- OCR component extraction is deliberately conservative and supports only a subset of label layouts. It needs tests for multi-line layouts, ingredient lists, strength bases, Hindi/English and mixed scripts.
+- Current composition schema must be extended for strength basis (for example, per tablet vs per 5 mL) before exact production comparisons.
+- The first REST adapter expects a buyer-specific `/products/search-by-composition` contract; document it and provide a mock buyer catalogue service for integration testing.
+- In-memory scan sessions do not support multiple replicas or durable restart recovery.
+- API-key-only auth is adequate for an initial trusted server-to-server integration, but a production mobile integration must not embed a permanent key in the app.
+- External production AI Vision adapter, configuration/admin UI, field mapping, and customer-managed storage are incomplete.
+- Verify all latest CI runs. Earlier CI history contains a failure caused by a test expecting `total_matches` after the response field had been changed to `matches_in_page`; confirm that this mismatch is fixed and the latest tests are green.
+- Review pagination end-to-end. The buyer adapter applies pagination, so the local matcher must not slice the same page again.
+- Validate composition extraction cannot mark inactive ingredients as active when the label heading is ambiguous.
+- Ensure a missing dosage-form/release/route field is represented as missing, not assumed equal.
+
+Do not claim the product is production-ready just because the basic unit tests pass.
+
+## 33. Implementation sequence for the next AI coding session
+
+1. Read this complete plan and `IMPLEMENTATION_STATUS.md`.
+2. Inspect every source file, tests, dependency file, workflow and current Git history.
+3. Run the existing test and lint commands and record the actual baseline.
+4. Fix any current failing tests and contract mismatches before adding features.
+5. Finalise the structured component schema, including strength basis and source provenance.
+6. Add comprehensive unit tests for exact composition signature creation, units, bases, ingredient order, partial mismatch, extra active component, unknown role, salt/chemical form, low confidence, and missing catalogue data.
+7. Complete the buyer REST adapter contract and end-to-end mock catalogue service.
+8. Complete the composition-group API response and pagination contract.
+9. Build the Expo sample host app and guided scanner screens.
+10. Add capture quality scoring and adaptive retake behaviour.
+11. Complete OCR/pre-processing and buyer-configured Vision provider integration.
+12. Add secure configuration/admin panel and customer-owned storage options.
+13. Run CI, security checks, packaging and clean-install validation.
+14. Update README, SDK docs, catalogue docs, deployment docs and IMPLEMENTATION_STATUS.md.
+15. Provide a truthful completion report listing what passed, what remains and any unverified production assumptions.
+
+The next AI should implement real code, not merely rewrite plans or produce snippets, and should make small, reviewable commits.
