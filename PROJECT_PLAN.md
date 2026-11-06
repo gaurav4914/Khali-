@@ -47,9 +47,9 @@ The second result is a **catalogue composition match**, not a declaration of cli
 5. Resolve the exact photographed product against only the buyer's authorised catalogue.
 6. Extract a structured list of active ingredients and per-ingredient strengths, then query the buyer's catalogue for all exact composition-group records.
 7. Keep exact product identity, composition similarity, and clinical decisions as separate concepts.
-7. Support different buyer databases through adapters rather than assuming one database schema.
-8. Deliver the complete system as a self-hosted package that can be sold to multiple buyers.
-9. Minimise operational work for the original developer after delivery.
+8. Support different buyer databases through adapters rather than assuming one database schema.
+9. Deliver the complete system as a self-hosted package that can be sold to multiple buyers.
+10. Minimise operational work for the original developer after delivery.
 
 ### 2.2 Non-goals
 
@@ -126,8 +126,8 @@ The solution is a modular, self-hosted application. Keep the first build as a mo
 9. **Exact Product Identity Resolver:** determines whether the photographed pack maps to one specific catalogue record.
 10. **Composition Parser and Group Finder:** builds an ingredient/strength signature and retrieves all buyer-catalogue records with the same exact active-composition signature.
 11. **Result Formatter:** returns exact identity and composition-group results as separate groups, with matched, different, and missing fields.
-11. **Configuration Panel:** lets the buyer configure providers, catalogue field mappings, retention, and scan limits.
-12. **Audit/Operations Module:** customer-controlled technical logs and optional review events.
+12. **Configuration Panel:** lets the buyer configure providers, catalogue field mappings, retention, and scan limits.
+13. **Audit/Operations Module:** customer-controlled technical logs and optional review events.
 
 ### 4.2 Deployment boundary
 
@@ -252,7 +252,7 @@ Do not show a success state when essential printed text remains unreadable.
 
 After the required captures are submitted:
 
-- Show a progress sequence: checking image quality → reading visible text → checking the buyer's catalogue.
+- Show a progress sequence: checking image quality → reading visible text → identifying the photographed pack → searching the buyer's catalogue for exact recorded-composition matches.
 - Allow cancellation.
 - Do not expose raw provider errors or API keys.
 - If network access fails, offer retry without losing captured images, subject to the buyer's retention policy.
@@ -335,7 +335,9 @@ A multi-photo workflow is useful; genuine 3D reconstruction is not needed for th
 
 **Our parser:** validates and normalises the returned content.
 
-**Our identity resolver:** uses the extracted product identity to retrieve the corresponding record from the buyer's catalogue.
+**Our exact identity resolver:** uses the extracted product identity to retrieve the photographed product record.
+
+**Our composition-group finder:** uses the structured active-ingredient and strength list to retrieve all buyer-catalogue records with the same exact composition signature.
 
 The AI provider must not make up missing strengths, ingredients, dosage forms, or product identities. It must not decide that a different medicine is a safe replacement.
 
@@ -356,6 +358,8 @@ At minimum, include a mock provider for local development and tests. Add real pr
 
 ### 7.3 Structured extraction schema
 
+The structured output must include a component array for combination products. A single composition string is not sufficient for deterministic matching.
+
 ~~~json
 {
   "scan_id": "scan_123",
@@ -374,11 +378,29 @@ At minimum, include a mock provider for local development and tests. Add real pr
     }
   },
   "printed_composition_text": {
-    "value": "Ingredient A 500 mg",
+    "value": "Ingredient A 500 mg + Ingredient B 10 mg",
     "confidence": 0.84,
     "source_capture_id": "capture_124",
-    "source_text": "Ingredient A 500 mg"
+    "source_text": "Ingredient A 500 mg + Ingredient B 10 mg"
   },
+  "composition_components": [
+    {
+      "ingredient_name": "Ingredient A",
+      "ingredient_role": "active",
+      "strength_value": "500",
+      "strength_unit": "mg",
+      "confidence": 0.84,
+      "source_capture_ids": ["capture_124"]
+    },
+    {
+      "ingredient_name": "Ingredient B",
+      "ingredient_role": "active",
+      "strength_value": "10",
+      "strength_unit": "mg",
+      "confidence": 0.84,
+      "source_capture_ids": ["capture_124"]
+    }
+  ],
   "dosage_form_text": null,
   "release_type_text": null,
   "route_text": null,
@@ -598,7 +620,29 @@ The host application can call these endpoints directly or through the SDK.
 }
 ~~~
 
-### 10.4 API standards
+### 10.4 Composition-group request/response contract
+
+Request:
+
+~~~json
+{
+  "scan_id": "scan_123",
+  "page": 1,
+  "page_size": 50
+}
+~~~
+
+The engine sends the buyer catalogue a read-only search request containing the complete extracted active-component list, each component's strict ingredient name/key, strength value, and unit. The buyer API must return all matching records in that page, with structured components and buyer-supplied brand-category metadata.
+
+Response groups are separate from exact product identity:
+- exact recorded composition match;
+- composition match where a known dosage-form/release/route difference is present;
+- no exact recorded composition match;
+- unable to compare due to incomplete or uncertain source data.
+
+The API response includes matched components, differences, missing fields, source update timestamp, and a professional-review notice. The result count is for the returned and locally verified page; clients request subsequent pages when needed.
+
+### 10.5 API standards
 
 - Version every public endpoint.
 - Validate image MIME type, file size, and image dimensions.
@@ -941,7 +985,7 @@ Build in small, testable phases. Do not start every module simultaneously.
 
 The intended purpose and marketing claims matter. Software intended for a medical purpose may fall within India's Medical Devices Rules framework. CDSCO currently lists a 2026 guidance document on Medical Device Software under MDR-2017. Before production release or making claims that the product supports treatment decisions, obtain qualified regulatory advice on whether the intended features and claims trigger medical-device requirements.
 
-The initial product description should remain limited to image reading and exact product identification from the buyer's catalogue. This does not remove the need for review; actual classification depends on final intended purpose and functionality.
+The initial product description should remain limited to image reading, product identification from the buyer's catalogue, and neutral catalogue composition matching. Do not market a composition match as a clinical substitution recommendation. This does not remove the need for review; actual classification depends on final intended purpose and functionality.
 
 Official references to check during implementation and release:
 
