@@ -7,13 +7,18 @@ from PIL import Image, ImageDraw
 from app.config import Settings
 from app.main import create_app
 from app.ocr import EmptyMockOCRProvider, OCRDocument
-from app.schemas import CatalogueProduct
+from app.schemas import (
+    BrandCategory,
+    CatalogueProduct,
+    CompositionComponent,
+    IngredientRole,
+)
 
 
 class FakeOCR:
     def read_text(self, image_path: Path):
         return OCRDocument(
-            text="Example Product\nExample Ingredient 500 mg",
+            text="Example Product\nComposition: Example Ingredient 500 mg",
             mean_confidence=0.91,
             provider="test",
         )
@@ -23,6 +28,30 @@ class FakeCatalogue:
     async def search(self, *, query=None, barcode=None):
         if query and query.casefold() == "example product":
             return [CatalogueProduct(product_id="demo-1", display_name="Example Product")]
+        return []
+
+    async def search_by_composition(self, components, *, page, page_size):
+        if components and components[0].ingredient_name == "Example Ingredient":
+            component = CompositionComponent(
+                ingredient_name="Example Ingredient",
+                ingredient_role=IngredientRole.ACTIVE,
+                strength_value="500",
+                strength_unit="mg",
+            )
+            return [
+                CatalogueProduct(
+                    product_id="brand-1",
+                    display_name="Reference Example",
+                    brand_category=BrandCategory.REFERENCE,
+                    composition_components=[component],
+                ),
+                CatalogueProduct(
+                    product_id="brand-2",
+                    display_name="Other Example",
+                    brand_category=BrandCategory.OTHER,
+                    composition_components=[component],
+                ),
+            ]
         return []
 
     async def get_product(self, product_id):
@@ -68,6 +97,15 @@ def test_create_upload_recognise_and_resolve(tmp_path: Path):
         extraction = client.post(f"/v1/scans/{scan_id}/recognise")
         assert extraction.status_code == 200
         assert extraction.json()["printed_product_name"]["value"] == "Example Product"
+        assert extraction.json()["composition_components"][0]["ingredient_name"] == "Example Ingredient"
+
+        composition = client.post(
+            "/v1/catalogue/composition-matches",
+            json={"scan_id": scan_id},
+        )
+        assert composition.status_code == 200
+        assert composition.json()["total_matches"] == 2
+        assert composition.json()["matches"][0]["product"]["product_id"] == "brand-1"
 
         resolved = client.post("/v1/catalogue/resolve", json={"scan_id": scan_id})
         assert resolved.status_code == 200
@@ -76,6 +114,11 @@ def test_create_upload_recognise_and_resolve(tmp_path: Path):
         fetched = client.get(f"/v1/scans/{scan_id}")
         assert fetched.status_code == 200
         assert len(fetched.json()["captures"]) == 1
+
+        capture_id = fetched.json()["captures"][0]["capture_id"]
+        deleted = client.delete(f"/v1/scans/{scan_id}/captures/{capture_id}")
+        assert deleted.status_code == 204
+        assert len(client.get(f"/v1/scans/{scan_id}").json()["captures"]) == 0
 
 
 def test_api_key_is_enforced_when_configured(tmp_path: Path):
