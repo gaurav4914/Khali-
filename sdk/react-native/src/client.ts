@@ -2,6 +2,7 @@ import type {
   CaptureResponse,
   CaptureStep,
   CatalogueResolveResponse,
+  CompositionMatchResponse,
   CreateScanResponse,
   ScanExtraction,
 } from "./types";
@@ -117,6 +118,25 @@ export class MedicineEngineClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ scan_id: scanId, barcode }),
     });
+  }
+
+  findCompositionMatches(
+    scanId: string,
+    page = 1,
+    pageSize = 50,
+  ): Promise<CompositionMatchResponse> {
+    return this.request("/v1/catalogue/composition-matches", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scan_id: scanId, page, page_size: pageSize }),
+    });
+  }
+
+  removeCapture(scanId: string, captureId: string): Promise<void> {
+    return this.request(
+      `/v1/scans/${encodeURIComponent(scanId)}/captures/${encodeURIComponent(captureId)}`,
+      { method: "DELETE" },
+    );
   }
 
   getScanResult(scanId: string): Promise<unknown> {
