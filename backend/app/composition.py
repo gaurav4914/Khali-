@@ -53,9 +53,13 @@ def normalise_strength(value: str, unit: str) -> tuple[str, str]:
     if canonical_unit is None:
         raise CompositionNotComparable(f"Unsupported strength unit: {unit}")
 
-    # Convert grams to milligrams only. Other units stay distinct.
+    # Canonicalise mass strengths to mg. IU and percentage units remain separate
+    # because conversion can be substance-specific or context-dependent.
     if canonical_unit == "g":
         amount *= Decimal("1000")
+        canonical_unit = "mg"
+    elif canonical_unit == "mcg":
+        amount /= Decimal("1000")
         canonical_unit = "mg"
 
     canonical_amount = format(amount.normalize(), "f")
@@ -166,7 +170,9 @@ class CompositionGroupMatcher:
                 if scanned and catalogue_value:
                     if normalise_ingredient(scanned) != normalise_ingredient(catalogue_value):
                         differences.append(field_name)
-                elif scanned and not catalogue_value:
+                else:
+                    # Missing on either side is visible; do not assume a formulation
+                    # detail is the same just because the catalogue has no value.
                     missing.append(field_name)
 
             status = (
@@ -180,8 +186,8 @@ class CompositionGroupMatcher:
                 if component.ingredient_role == IngredientRole.ACTIVE
             ]
             explanation = (
-                "Every active-ingredient key/name and per-ingredient strength matches the "
-                "buyer's catalogue record."
+                "Every normalised active-ingredient name and per-ingredient strength matches "
+                "the buyer's catalogue record."
             )
             if differences:
                 explanation += " Formulation details differ: " + ", ".join(differences) + "."
@@ -210,26 +216,27 @@ class CompositionGroupMatcher:
             )
         )
 
-        total = len(candidates)
-        start = (page - 1) * page_size
-        visible = candidates[start : start + page_size]
+        # The buyer adapter has already applied page/page_size. Do not slice a
+        # second time here: doing so would make page 2+ incorrectly return no rows.
+        matches_in_page = len(candidates)
         return CompositionMatchResponse(
             scan_id=scan_id,
             status=(
                 CompositionSearchStatus.MATCHES_FOUND
-                if total
+                if matches_in_page
                 else CompositionSearchStatus.NO_MATCHES
             ),
             composition_signature=signature_hash(requested_signature),
-            total_matches=total,
+            matches_in_page=matches_in_page,
             page=page,
             page_size=page_size,
-            matches=visible,
+            matches=candidates,
             message=(
                 "These buyer-catalogue records have the same recorded active-ingredient "
                 "set and strengths. This is catalogue information, not confirmation that "
-                "any product is suitable for a particular person."
-                if total
-                else "No exact structured active-composition records were found in the buyer catalogue."
+                "any product is suitable for a particular person. Request the next page "
+                "when this page is full."
+                if matches_in_page
+                else "No exact structured active-composition records were found on this catalogue page."
             ),
         )
