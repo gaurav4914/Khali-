@@ -1,4 +1,4 @@
-import re
+import unicodedata
 from difflib import SequenceMatcher
 
 from .schemas import (
@@ -13,7 +13,8 @@ from .schemas import (
 def normalise_label(value: str | None) -> str:
     if not value:
         return ""
-    return re.sub(r"[^a-z0-9]+", "", value.casefold())
+    normalised = unicodedata.normalize("NFKC", value).casefold()
+    return "".join(character for character in normalised if character.isalnum())
 
 
 class ExactProductIdentityResolver:
