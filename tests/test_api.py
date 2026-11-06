@@ -18,7 +18,7 @@ from app.schemas import (
 class FakeOCR:
     def read_text(self, image_path: Path):
         return OCRDocument(
-            text="Example Product\nComposition: Example Ingredient 500 mg",
+            text="Example Product\nEach tablet contains: Example Ingredient 500 mg",
             mean_confidence=0.91,
             provider="test",
         )
