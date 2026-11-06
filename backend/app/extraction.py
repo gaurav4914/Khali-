@@ -69,6 +69,7 @@ def extract_printed_fields(documents: list[tuple[str, OCRDocument]]) -> ScanExtr
     for capture_id, document in documents:
         raw_parts.append(document.text)
         in_composition_section = False
+        active_composition_context = False
         context_lines_remaining = 0
         capture_components: list[CompositionComponent] = []
 
@@ -81,15 +82,19 @@ def extract_printed_fields(documents: list[tuple[str, OCRDocument]]) -> ScanExtr
             if COMPOSITION_HEADING.search(value):
                 in_composition_section = True
                 context_lines_remaining = 6
-                active_context = bool(ACTIVE_COMPOSITION_HEADING.search(value))
+                active_composition_context = bool(ACTIVE_COMPOSITION_HEADING.search(value))
                 components = _parse_components(
-                    value, capture_id, document.mean_confidence, active_context=active_context
+                    value,
+                    capture_id,
+                    document.mean_confidence,
+                    active_context=active_composition_context,
                 )
                 capture_components.extend(components)
                 continue
 
             if STOP_SECTION.search(value):
                 in_composition_section = False
+                active_composition_context = False
                 context_lines_remaining = 0
                 continue
 
@@ -97,19 +102,14 @@ def extract_printed_fields(documents: list[tuple[str, OCRDocument]]) -> ScanExtr
                 value,
                 capture_id,
                 document.mean_confidence,
-                active_context=(
-                    in_composition_section
-                    and any(
-                        ACTIVE_COMPOSITION_HEADING.search(previous[0])
-                        for previous in lines[-context_lines_remaining - 1 : -1]
-                    )
-                ),
+                active_context=in_composition_section and active_composition_context,
             )
             capture_components.extend(components)
             if in_composition_section:
                 context_lines_remaining -= 1
                 if context_lines_remaining <= 0:
                     in_composition_section = False
+                    active_composition_context = False
 
         if capture_components:
             all_component_sets.append(capture_components)
