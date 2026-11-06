@@ -15,11 +15,11 @@ This repository is the engine/backend project. A buyer's existing Android, iOS, 
 - A catalogue composition match is not a clinical interchangeability decision or an instruction to change treatment.
 - Local Tesseract OCR is the initial OCR implementation. A production AI Vision adapter is not yet included.
 
-## Project documents
+## Project plan
 
-- [Complete technical project plan](PROJECT_PLAN.md) — product requirements, camera UX, matching/data contracts, architecture, security, deployment and roadmap.
-- [Implementation status](IMPLEMENTATION_STATUS.md) — existing modules and remaining gaps.
-- [Hindi Gemini implementation prompt](GEMINI_IMPLEMENTATION_PROMPT_HI.md) — paste this handoff prompt into Gemini after connecting this GitHub repository.
+- [Master project plan](PROJECT_PLAN.md) — the single source of truth for product requirements, scanner UX, matching engine, architecture, API contracts, security, deployment and roadmap.
+
+Supporting installation and integration guides are kept under `docs/`; they are technical references, not separate project plans.
 
 ## Quick start
 
