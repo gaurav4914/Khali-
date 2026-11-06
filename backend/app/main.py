@@ -79,10 +79,10 @@ def create_app(
 
     app = FastAPI(
         title=cfg.app_name,
-        version="0.1.0",
+        version="0.2.0",
         description=(
-            "Self-hosted medicine-pack text extraction and exact product identity API. "
-            "It does not recommend medicine substitutions or provide clinical advice."
+            "Self-hosted medicine-pack OCR, exact product identity, and buyer-catalogue "
+            "composition-group discovery API. Catalogue matches are not clinical recommendations."
         ),
         lifespan=lifespan,
     )
