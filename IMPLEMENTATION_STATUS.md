@@ -1,8 +1,12 @@
 # Implementation Status
 
-Updated: 2026-11-06
+Updated: 2026-11-07
 
-## Implemented
+## Repository direction
+
+The canonical specification is [PROJECT_PLAN.md](PROJECT_PLAN.md) v1.2. The Hindi implementation handoff for the next AI coding session is [GEMINI_IMPLEMENTATION_PROMPT_HI.md](GEMINI_IMPLEMENTATION_PROMPT_HI.md).
+
+## Implemented foundation
 
 - FastAPI application and versioned REST endpoints.
 - Temporary in-memory scan-session lifecycle with expiry.
@@ -15,25 +19,33 @@ Updated: 2026-11-06
 - Component-level provenance and OCR confidence.
 - Buyer read-only REST catalogue adapter.
 - Exact photographed-product identity resolver with ambiguity and review-required states.
-- Composition-group matcher that compares the complete active-component set and each strength, independent of component order.
-- Composition match results keep reference-brand/other-brand category only when buyer catalogue supplies it.
-- Formulation differences remain visible; composition matches are not labelled as clinically interchangeable.
+- Composition-group matcher that compares the complete active-component set and per-component strength, independent of component order.
+- Deterministic mass-unit normalisation for implemented mass units; IU and percentage remain separate.
+- Reference-brand / other-brand labels are accepted only from buyer catalogue metadata.
+- Formulation differences and missing fields remain visible.
 - REST endpoint for buyer-catalogue composition-group discovery.
-- React Native TypeScript API client for scan, upload, extraction, identity, composition lookup, and capture deletion.
+- React Native TypeScript API client for scan, upload, extraction, identity, composition lookup and capture deletion.
 - API key required outside local development/test environments.
-- Docker packaging, configuration template, documentation, and initial tests.
+- Docker packaging, environment template, initial documentation and tests.
 - CI workflow for lint and automated tests.
 
-## Not implemented yet
+## Important limitations and next implementation work
 
-- Production AI Vision provider adapter (Gemini/OpenAI/other buyer-selected provider).
-- Full React Native/Expo guided camera UI; current SDK is still a typed API client.
-- Advanced blur/glare/text-region detection and adaptive camera guidance.
-- Persistent/shared scan-session storage for multiple API replicas.
-- Buyer-specific SQL/database connectors beyond the read-only REST adapter.
-- Admin configuration dashboard.
-- Production security assessment, privacy review, performance benchmarks, and regulatory review.
+- The composition parser is still conservative and does not yet cover every medicine label layout, multi-line arrangement, regional language, strength basis or salt/canonical ingredient mapping.
+- The current component schema needs full strength-basis support (for example, per tablet vs per 5 mL) before robust production comparisons.
+- The full React Native/Expo guided camera interface is not complete; the current SDK is an API client, not a finished scanner UI.
+- Adaptive blur/glare/text-region detection and guided retry logic need expansion and device testing.
+- A production AI Vision adapter (Gemini or another buyer-selected provider) is not yet complete.
+- The current buyer integration is a read-only REST contract. A configurable SQL connector is optional future work.
+- The current ScanStore is in-memory and supports one API process only. Multi-replica production use requires a buyer-managed shared session store and object-storage adapter.
+- The admin/configuration dashboard and buyer field-mapping UI are not complete.
+- Authentication for mobile integrations needs a secure buyer-backend proxy or short-lived scoped-token design; never embed a permanent server API key in a mobile app.
+- Security, privacy, performance, representative OCR and regulatory review are still required before a commercial production release.
+
+## CI and test status
+
+Earlier CI history included a response-schema/test mismatch where one test expected `total_matches` after the response field had changed to `matches_in_page`. The test and SDK assertions were subsequently updated. Verify the latest GitHub Actions run on the current main commit before treating the branch as green. Do not assume a green run from an older commit validates later changes.
 
 ## Deployment limitation
 
-The current ScanStore is in-memory and intended for one API process/replica. Do not deploy multiple replicas until a buyer-managed shared session store and object-storage adapter are added. The system does not require a shared medicine database.
+The current ScanStore is in-memory and intended for one API process/replica. Do not deploy multiple replicas until a buyer-managed shared session store and object-storage adapter are added. The engine does not require a shared medicine catalogue database.
