@@ -1,11 +1,12 @@
 # Medicine Photo Intelligence Engine — Master Project Plan
 
 > Document: Product requirements, scanner UX, technical architecture, API contracts, deployment model, safety boundaries, and implementation roadmap  
-> Version: 1.2  
-> Status: Revised product requirements — implementation foundation exists; composition-group engine is the next core milestone  
+> Version: 1.3  
+> Status: Canonical master plan — the original planning file is preserved and all approved requirement changes are merged here; implementation foundation exists  
 > Repository: gaurav4914/Khali-  
 > Product model: Self-hosted B2B software, licensed repeatedly to multiple buyers  
-> Core principle: Build once. Package once. Each buyer installs and operates its own copy.
+> Core principle: Build once. Package once. Each buyer installs and operates its own copy.  
+> Planning rule: This is the original master planning file from the repository's initial commit and the single source of truth. Merge future requirement changes here; do not create a duplicate or replacement plan.
 
 ---
 
@@ -1384,7 +1385,7 @@ The following files already exist and must be reviewed before changes:
 - `backend/app/store.py`: temporary in-memory scan session store.
 - `sdk/react-native/src/client.ts` and `types.ts`: typed API client.
 - `tests/`: initial API, identity, composition, extraction, quality, and preprocessing tests.
-- `docs/`, `README.md`, `IMPLEMENTATION_STATUS.md`: installation, API and project notes.
+- `docs/` and `README.md`: installation, API, integration and operational notes.
 
 ### 32.1 Known gaps to verify/fix
 
@@ -1404,7 +1405,7 @@ Do not claim the product is production-ready just because the basic unit tests p
 
 ## 33. Implementation sequence for the next AI coding session
 
-1. Read this complete plan and `IMPLEMENTATION_STATUS.md`.
+1. Read this entire `PROJECT_PLAN.md`. It is the single master requirements and planning document. Then read `README.md` and the technical guides under `docs/`.
 2. Inspect every source file, tests, dependency file, workflow and current Git history.
 3. Run the existing test and lint commands and record the actual baseline.
 4. Fix any current failing tests and contract mismatches before adding features.
@@ -1417,7 +1418,7 @@ Do not claim the product is production-ready just because the basic unit tests p
 11. Complete OCR/pre-processing and buyer-configured Vision provider integration.
 12. Add secure configuration/admin panel and customer-owned storage options.
 13. Run CI, security checks, packaging and clean-install validation.
-14. Update README, SDK docs, catalogue docs, deployment docs and IMPLEMENTATION_STATUS.md.
+14. Update `README.md` and the relevant technical guides under `docs/`. Keep all product requirements and planning decisions in this `PROJECT_PLAN.md`; do not create another master-plan or handoff file.
 15. Provide a truthful completion report listing what passed, what remains and any unverified production assumptions.
 
 The next AI should implement real code, not merely rewrite plans or produce snippets, and should make small, reviewable commits.
