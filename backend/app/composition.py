@@ -80,11 +80,10 @@ def component_signature(
             unknown_role = True
             continue
 
-        ingredient_key = (
-            normalise_ingredient(component.ingredient_key)
-            if component.ingredient_key
-            else normalise_ingredient(component.ingredient_name)
-        )
+        # The photographed pack generally has no buyer-catalogue ingredient ID.
+        # Use a strict normalised printed name for cross-system comparison; buyer
+        # ingredient keys remain metadata until a trusted name-to-key map is supplied.
+        ingredient_key = normalise_ingredient(component.ingredient_name)
         if not ingredient_key:
             raise CompositionNotComparable("An active ingredient has no usable name or key.")
         amount, unit = normalise_strength(component.strength_value, component.strength_unit)
