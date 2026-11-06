@@ -104,7 +104,7 @@ def test_create_upload_recognise_and_resolve(tmp_path: Path):
             json={"scan_id": scan_id},
         )
         assert composition.status_code == 200
-        assert composition.json()["total_matches"] == 2
+        assert composition.json()["matches_in_page"] == 2
         assert composition.json()["matches"][0]["product"]["product_id"] == "brand-1"
 
         resolved = client.post("/v1/catalogue/resolve", json={"scan_id": scan_id})
