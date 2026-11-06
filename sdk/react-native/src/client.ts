@@ -49,6 +49,10 @@ export class MedicineEngineClient {
       },
     });
 
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
     if (!response.ok) {
       let message = `Medicine Engine request failed (${response.status}).`;
       let code: string | undefined;
