@@ -1,8 +1,8 @@
 # Medicine Photo Intelligence Engine — Master Project Plan
 
 > Document: Product requirements, scanner UX, technical architecture, API contracts, deployment model, safety boundaries, and implementation roadmap  
-> Version: 1.0  
-> Status: Planning baseline — implementation has not started  
+> Version: 1.1  
+> Status: Revised product requirements — implementation foundation exists; composition-group engine is the next core milestone  
 > Repository: gaurav4914/Khali-  
 > Product model: Self-hosted B2B software, licensed repeatedly to multiple buyers  
 > Core principle: Build once. Package once. Each buyer installs and operates its own copy.
@@ -19,18 +19,22 @@ We are **not** building a consumer medicine app, online pharmacy, or shared medi
 - Image quality checks and targeted multi-photo capture.
 - OCR and optional AI-assisted reading of printed medicine-pack information.
 - Structured extraction of product name, printed composition text, strength text, form text, manufacturer text, and other visible label fields.
-- A configurable connector that reads the buyer's own authorised product catalogue.
-- An exact-product identity resolution engine that finds the scanned product record in the buyer's catalogue.
-- REST APIs, a React Native/Expo integration package, a sample integration app, and deployment tools.
+- A configurable, read-only connector that queries the buyer's own authorised product catalogue.
+- An exact-product identity resolver for the photographed pack.
+- A separate composition-group discovery engine that finds every catalogue record whose structured active-ingredient set and strength match the photographed label, including a reference brand and other brands when those records exist in the buyer's catalogue.
+- REST APIs, a React Native/Expo scanner SDK, a sample integration app, and deployment tools.
 - Complete source code and documentation so the buyer can host the product in its own cloud or on-premises environment.
 
 Each buyer runs an independent copy. The buyer supplies its own server, catalogue access, AI-provider credentials, storage policy, and any paid OCR/AI services. The product must not depend on our permanent cloud account, central API, shared medicine database, or recurring service operated by us.
 
 ### Safety boundary for the first product
 
-This product identifies and resolves the exact product visible in a photograph. It may compare the photographed label with the corresponding catalogue record to explain why that identity was or was not resolved.
+The product has two distinct, non-clinical catalogue functions:
 
-It will **not** search for, rank, recommend, or declare other medicines to be substitutes or clinically interchangeable. It will not tell a patient to start, stop, or change a medicine. If a buyer later wants a professional clinical workflow, that must be designed and reviewed separately by appropriately qualified professionals and regulatory experts; it is not part of this first product.
+1. **Exact product identification:** identify the specific pack shown in the photograph.
+2. **Composition-group discovery:** read the active-ingredient composition and strengths printed on the photographed pack, then return catalogue records whose structured active-ingredient set and strengths match exactly. This can include a reference/recognised brand and one or more other brands, but only if those records actually exist in the buyer's authorised catalogue.
+
+The second result is a **catalogue composition match**, not a declaration of clinical interchangeability and not an instruction to replace, start, stop, or change treatment. Show the exact fields compared, any dosage-form/release/route differences, missing data, and a visible professional-review notice. Do not use words such as safe substitute, take this instead, or equivalent treatment.
 
 ## 2. Product goals
 
@@ -40,8 +44,9 @@ It will **not** search for, rank, recommend, or declare other medicines to be su
 2. Read medicine-pack text reliably, including small, curved, reflective, folded, or wrinkled packaging.
 3. Ask for another targeted photo when the first image is not readable enough.
 4. Convert OCR/vision output into structured, traceable fields.
-5. Resolve the scanned product against only the buyer's authorised catalogue.
-6. Keep image reading and product identity resolution separate from any medical decision.
+5. Resolve the exact photographed product against only the buyer's authorised catalogue.
+6. Extract a structured list of active ingredients and per-ingredient strengths, then query the buyer's catalogue for all exact composition-group records.
+7. Keep exact product identity, composition similarity, and clinical decisions as separate concepts.
 7. Support different buyer databases through adapters rather than assuming one database schema.
 8. Deliver the complete system as a self-hosted package that can be sold to multiple buyers.
 9. Minimise operational work for the original developer after delivery.
@@ -55,8 +60,9 @@ The first release will not:
 - Maintain a shared global medicine database.
 - Scrape another application's private database.
 - Give diagnosis, dosage, treatment, prescription, or medicine-switching advice.
-- Search for or rank alternative medicines.
+- Give patient-specific treatment recommendations or tell a person to switch products.
 - Declare two different products clinically interchangeable.
+- Treat a partial, fuzzy, or incomplete composition match as an exact composition match.
 - Require every buyer to use the same cloud, database vendor, AI provider, or app framework.
 - Depend on a central licence server operated by us.
 
@@ -117,8 +123,9 @@ The solution is a modular, self-hosted application. Keep the first build as a mo
 6. **Vision Provider Layer:** optional AI image interpretation through buyer-configured provider credentials.
 7. **Extraction and Normalisation Module:** converts OCR/vision results into a structured scan record.
 8. **Catalogue Adapter:** retrieves records from the buyer's database/API through a read-only contract.
-9. **Identity Resolution Engine:** determines whether the photographed product can be confidently identified as a particular record in the buyer's catalogue.
-10. **Result Formatter:** returns evidence, confidence, missing fields, and the resolved catalogue record to the buyer's app.
+9. **Exact Product Identity Resolver:** determines whether the photographed pack maps to one specific catalogue record.
+10. **Composition Parser and Group Finder:** builds an ingredient/strength signature and retrieves all buyer-catalogue records with the same exact active-composition signature.
+11. **Result Formatter:** returns exact identity and composition-group results as separate groups, with matched, different, and missing fields.
 11. **Configuration Panel:** lets the buyer configure providers, catalogue field mappings, retention, and scan limits.
 12. **Audit/Operations Module:** customer-controlled technical logs and optional review events.
 
@@ -384,7 +391,9 @@ At minimum, include a mock provider for local development and tests. Add real pr
 Important:
 
 - Preserve literal printed text separately from normalised values.
-- Do not label an ingredient as active or inactive unless a reliable source confirms that role.
+- Extract all active-ingredient names/codes and each ingredient's own strength/unit; do not merge combination products into one unstructured string.
+- Treat an ingredient as active only when the buyer catalogue or a reviewed extraction rule explicitly marks that role; unknown role is not treated as active.
+- Do not silently merge ingredient synonyms, salt forms, or chemical forms unless the buyer provides an approved canonical ingredient identifier.
 - Store a unit-normalised value only when the conversion is deterministic and validated.
 - Distinguish “not visible”, “not present”, and “not recognised”.
 - Keep confidence as field-level evidence, not as a guarantee of correctness.
@@ -414,8 +423,9 @@ Minimum fields for reliable identity resolution:
 - Buyer product ID.
 - Product/display name.
 - Brand name.
-- Printed composition text or structured catalogue description.
-- Strength text.
+- Printed composition text.
+- Structured composition components with buyer-owned canonical ingredient key/name, ingredient role, per-ingredient strength value and unit.
+- Strength text for display.
 - Dosage form text.
 - Release type, where available.
 - Manufacturer, if available.
@@ -433,6 +443,8 @@ The adapter must expose operations such as:
 - Search by exact product identifiers.
 - Search by barcode or catalogue code.
 - Search by printed product-name candidates.
+- Search by an exact active-composition signature and return all matching catalogue records, not only the first result.
+- Return buyer-supplied reference-brand / other-brand classification where available.
 - Retrieve the full record for a candidate.
 - Return source and update timestamp.
 - Report missing fields and connector errors.
@@ -466,7 +478,7 @@ Resolve only the product shown in the photograph. Evidence may include:
 5. Manufacturer text, where available.
 6. Other buyer-provided catalogue identifiers.
 
-Do not treat a shared composition string as proof that two different products are the same product. Do not use this module to search for alternative medicines.
+Do not treat a shared composition string as proof that two different records are the same exact product. Exact product identity and composition-group discovery are separate operations. The composition-group finder may return different brand records with an exactly matching structured active composition, but its output is only a catalogue match and is not a clinical substitution decision.
 
 ### 9.3 Result groups
 
@@ -499,7 +511,38 @@ For each possible identity, include:
 - Identity status.
 - Plain-language reason for that status.
 
-The UI must not convert identity confidence into a treatment recommendation.
+The UI must not convert identity or composition confidence into a treatment recommendation.
+
+### 9.6 Composition-group discovery (required product feature)
+
+This is a separate query from exact product identity:
+
+1. Read all active-ingredient components on the photographed pack.
+2. For each component, preserve its printed name, amount, unit, capture ID, and confidence.
+3. Normalize only safe formatting differences (case, Unicode, whitespace, punctuation, and explicitly supported unit aliases). Do not silently merge ingredient synonyms, salt forms, or different chemical forms unless the buyer provides an approved canonical ingredient identifier.
+4. Build a deterministic signature from the complete set of active ingredient identifiers and per-ingredient strengths, sorted independent of order.
+5. Query the buyer's catalogue for the signature and verify returned records locally.
+6. Return every record that passes the exact structured check, subject to pagination and configured result limits.
+7. If the buyer marks a record as a reference brand, show that label. Show other brand names only from buyer-supplied metadata; never infer brand status from popularity.
+8. Show dosage form, release type, route, and other relevant differences explicitly. These attributes do not disappear merely because the active-ingredient signature matches.
+9. If any ingredient or strength is uncertain, incomplete, or unparsed, do not claim an exact composition match. Return composition could not be compared or review required.
+
+Required catalogue component fields:
+- ingredient_key (preferred stable buyer-owned canonical ID; otherwise a strict normalised literal name)
+- ingredient_name
+- ingredient_role (active, inactive, or unknown)
+- strength_value
+- strength_unit
+
+The engine compares the full set of active components only. If the catalogue has no reliable ingredient role or strength for an expected component, that record cannot be labelled an exact composition match. Excipients may be displayed as label data but are not silently mixed into the active-composition signature.
+
+Composition match result labels:
+- **Exact recorded composition match:** all active ingredient keys/names and per-ingredient strengths match.
+- **Composition match — formulation details differ:** active composition matches, but dosage form, release type, or route differs; show the difference prominently.
+- **Not an exact composition match:** one or more active ingredients or strengths differ.
+- **Unable to compare composition:** data is missing, unparseable, or uncertain.
+
+No match class is a medical approval or an instruction to change treatment.
 
 ## 10. API design
 
@@ -512,7 +555,8 @@ Use versioned REST endpoints. Publish an OpenAPI document and stable request/res
 - POST /v1/scans/{scan_id}/quality-check — assess a capture.
 - POST /v1/scans/{scan_id}/recognise — run OCR/vision extraction.
 - GET /v1/scans/{scan_id} — retrieve scan state.
-- POST /v1/catalogue/resolve — resolve the scanned product against the buyer's catalogue.
+- POST /v1/catalogue/resolve — resolve the exact photographed product against the buyer's catalogue.
+- POST /v1/catalogue/composition-matches — return all buyer-catalogue records with an exact structured active-composition signature.
 - GET /v1/catalogue/products/{product_id} — retrieve an identified catalogue record.
 - GET /v1/health — service health.
 - GET /v1/ready — dependency readiness.
@@ -757,7 +801,12 @@ Acceptance: the scanner asks for a targeted retry when essential information is 
 ### 16.4 Identity-resolution tests
 
 - Exact product identity is separated from mere text similarity.
-- Similar composition text alone does not identify a different product.
+- Similar composition text alone does not identify a different exact product.
+- An exact active-composition group returns all matching buyer-catalogue records, including multiple brands when present.
+- Ingredient order does not affect the composition signature.
+- Missing ingredient strengths, unknown ingredient roles, salt-form ambiguity, and uncertain OCR do not produce an exact match.
+- Dosage-form, release-type, or route differences remain visible.
+- Composition matches are labelled as catalogue data, not clinical interchangeability.
 - Important field conflicts are visible.
 - Missing fields produce an uncertainty result.
 - The system never produces “safe substitute” or “take this instead”.
@@ -825,16 +874,18 @@ Build in small, testable phases. Do not start every module simultaneously.
 
 **Exit:** a buyer can connect its own catalogue without importing it into our database.
 
-### Phase 4 — Exact-product identity resolver
+### Phase 4 — Exact-product identity and composition-group engines
 
-- Name and identifier normalisation.
-- Barcode and catalogue-code resolution.
-- Printed-label identity evidence.
-- Uncertainty and ambiguity handling.
-- Explainability payload.
-- Tests for conflicts and missing data.
+- Keep exact product identity resolution separate.
+- Add structured multi-component composition extraction.
+- Add strict active-ingredient/strength normalisation and deterministic signatures.
+- Extend the buyer catalogue adapter to query by composition signature and return all matches.
+- Return reference-brand / other-brand metadata only when buyer data supplies it.
+- Show dosage-form, release-type, and route differences.
+- Add uncertainty handling and explainability.
+- Test exact, reordered, missing, mixed, and conflicting components.
 
-**Exit:** the same input and same catalogue data produce reproducible product-identity results.
+**Exit:** exact product identity and composition-group results are reproducible and clearly separated.
 
 ### Phase 5 — AI provider integration
 
@@ -915,7 +966,10 @@ The product is ready for a first controlled buyer evaluation only when all of th
 - The buyer's catalogue is accessed through a documented adapter.
 - No central medicine database is required.
 - Exact identity results explain supporting and missing fields.
-- The product never presents a different medicine as a clinically safe replacement.
+- Exact composition-group search returns all records in the buyer catalogue that pass strict active-ingredient and strength comparison.
+- Reference-brand and other-brand labels come only from buyer catalogue metadata.
+- Dosage form, release type, route, and missing data are always visible.
+- The product never presents a composition match as a clinically safe replacement or patient-specific recommendation.
 - Buyer-owned AI credentials and infrastructure are used.
 - Images and logs follow customer-configured retention.
 - Docker installation and health checks work from a clean environment.
@@ -938,8 +992,9 @@ The product is ready for a first controlled buyer evaluation only when all of th
 | Mobile integration | React Native / Expo first |
 | Public API | Versioned REST API |
 | Identity logic | Deterministic and explainable |
-| Cross-product substitute search | Not part of this first product |
-| Clinical decision | Never automated by this product |
+| Composition-group discovery | Required; exact structured active-ingredient/strength match across buyer catalogue records |
+| Brand grouping | Buyer-provided reference-brand / other-brand metadata only |
+| Clinical decision | Never automated; catalogue match is not a prescription or switch instruction |
 | Licence activation server | Not required in first release |
 | Implementation status | Planning only; coding starts after plan review |
 
@@ -957,8 +1012,9 @@ When implementation is authorised, begin in this order:
 6. Add OCR and structured extraction.
 7. Add the buyer catalogue adapter and test fixture.
 8. Add exact-product identity resolution and explainability.
-9. Add the buyer configuration panel.
-10. Package with Docker, tests, and installation documentation.
+9. Add structured composition parsing, buyer-catalogue composition search, and strict multi-record result grouping.
+10. Add the buyer configuration panel.
+11. Package with Docker, tests, and installation documentation.
 
 Do not start with a central catalogue, subscription billing, user accounts, or a cloud service operated by the original developer.
 
