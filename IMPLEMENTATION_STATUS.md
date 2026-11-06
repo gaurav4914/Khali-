@@ -2,33 +2,38 @@
 
 Updated: 2026-11-06
 
-## Implemented in the initial engine foundation
+## Implemented
 
 - FastAPI application and versioned REST endpoints.
-- Temporary scan-session lifecycle with expiry.
-- JPEG/PNG/WEBP validation and upload-size checks.
-- Basic image quality indicators (brightness, edge detail, dimensions).
+- Temporary in-memory scan-session lifecycle with expiry.
+- JPEG/PNG/WEBP image validation and upload-size checks.
+- Basic image-quality indicators (brightness, edge detail, dimensions).
 - OCR provider protocol with local Tesseract implementation and empty mock provider.
-- OCR pre-processing derivative that preserves the original uploaded file.
-- Conservative extraction of visible product-name/composition/manufacturer text candidates.
-- Read-only REST catalogue adapter contract.
-- Deterministic exact product-identity resolver with ambiguous and review-required states.
-- Composition-only matching is explicitly prohibited as proof of product identity.
-- Optional API-key authentication.
-- React Native-compatible TypeScript API client.
+- OCR preprocessing derivative that preserves the original uploaded file.
+- Conservative extraction of printed product-name, composition, and manufacturer text.
+- Initial multi-component composition parsing for explicitly headed composition / contains sections.
+- Component-level provenance and OCR confidence.
+- Buyer read-only REST catalogue adapter.
+- Exact photographed-product identity resolver with ambiguity and review-required states.
+- Composition-group matcher that compares the complete active-component set and each strength, independent of component order.
+- Composition match results keep reference-brand/other-brand category only when buyer catalogue supplies it.
+- Formulation differences remain visible; composition matches are not labelled as clinically interchangeable.
+- REST endpoint for buyer-catalogue composition-group discovery.
+- React Native TypeScript API client for scan, upload, extraction, identity, composition lookup, and capture deletion.
+- API key required outside local development/test environments.
 - Docker packaging, configuration template, documentation, and initial tests.
 - CI workflow for lint and automated tests.
 
 ## Not implemented yet
 
-- A production-grade AI Vision adapter (Gemini/OpenAI/other buyer-selected provider).
+- Production AI Vision provider adapter (Gemini/OpenAI/other buyer-selected provider).
+- Full React Native/Expo guided camera UI; current SDK is still a typed API client.
 - Advanced blur/glare/text-region detection and adaptive camera guidance.
 - Persistent/shared scan-session storage for multiple API replicas.
-- Buyer-specific catalogue connector beyond the documented REST adapter.
+- Buyer-specific SQL/database connectors beyond the read-only REST adapter.
 - Admin configuration dashboard.
-- Full React Native camera SDK UI; the current SDK is a typed API client.
 - Production security assessment, privacy review, performance benchmarks, and regulatory review.
 
-## Important deployment limitation
+## Deployment limitation
 
-The current scan-session store is in-memory and is intended for one API process. Do not deploy multiple replicas until a buyer-managed shared session store and object-storage adapter are added. The system does not require a shared medicine database.
+The current ScanStore is in-memory and intended for one API process/replica. Do not deploy multiple replicas until a buyer-managed shared session store and object-storage adapter are added. The system does not require a shared medicine database.
