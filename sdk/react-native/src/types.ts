@@ -6,6 +6,8 @@ export type QualityStatus =
   | "retry_required"
   | "unsupported";
 
+export type BrandCategory = "reference" | "other" | "unknown";
+
 export interface CreateScanResponse {
   scan_id: string;
   status: string;
@@ -36,29 +38,55 @@ export interface ExtractedField {
   source_text: string | null;
 }
 
+export interface CompositionComponent {
+  ingredient_key?: string | null;
+  ingredient_name: string;
+  ingredient_role: "active" | "inactive" | "unknown";
+  strength_value: string;
+  strength_unit: string;
+  confidence?: number | null;
+  source_capture_ids?: string[];
+  source_text?: string | null;
+}
+
 export interface ScanExtraction {
   printed_product_name: ExtractedField;
   printed_composition_text: ExtractedField;
   manufacturer_text: ExtractedField;
+  dosage_form_text: ExtractedField;
+  release_type_text: ExtractedField;
+  route_text: ExtractedField;
+  composition_components: CompositionComponent[];
   raw_text: string;
   unreadable_fields: string[];
+  field_conflicts: string[];
+  composition_parse_status: string;
   review_required: boolean;
+}
+
+export interface CatalogueProduct {
+  product_id: string;
+  display_name: string;
+  brand_name?: string | null;
+  brand_category: BrandCategory;
+  barcode?: string | null;
+  composition_text?: string | null;
+  composition_components: CompositionComponent[];
+  strength_text?: string | null;
+  dosage_form_text?: string | null;
+  release_type_text?: string | null;
+  route_text?: string | null;
+  manufacturer?: string | null;
+  product_status?: string | null;
+  product_url?: string | null;
+  updated_at?: string | null;
 }
 
 export interface CatalogueResolveResponse {
   scan_id: string;
   status: string;
   result?: {
-    product?: {
-      product_id: string;
-      display_name: string;
-      brand_name?: string | null;
-      barcode?: string | null;
-      composition_text?: string | null;
-      strength_text?: string | null;
-      dosage_form_text?: string | null;
-      manufacturer?: string | null;
-    } | null;
+    product?: CatalogueProduct | null;
     status: string;
     evidence: {
       matched_fields: string[];
@@ -69,5 +97,26 @@ export interface CatalogueResolveResponse {
     review_required: boolean;
   } | null;
   candidates: unknown[];
+  message: string;
+}
+
+export interface CompositionMatchCandidate {
+  product: CatalogueProduct;
+  status: "exact_recorded_composition_match" | "composition_match_formulation_details_differ";
+  matched_components: string[];
+  different_fields: string[];
+  missing_fields: string[];
+  explanation: string;
+  review_required: boolean;
+}
+
+export interface CompositionMatchResponse {
+  scan_id: string;
+  status: "matches_found" | "no_matches" | "unable_to_compare";
+  composition_signature?: string | null;
+  total_matches: number;
+  page: number;
+  page_size: number;
+  matches: CompositionMatchCandidate[];
   message: string;
 }
