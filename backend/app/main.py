@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from .catalogue import (
@@ -12,6 +12,7 @@ from .catalogue import (
     EmptyCatalogueAdapter,
     RestCatalogueAdapter,
 )
+from .composition import CompositionGroupMatcher, CompositionNotComparable, component_signature
 from .config import Settings, get_settings
 from .extraction import extract_printed_fields
 from .identity import ExactProductIdentityResolver
@@ -22,6 +23,9 @@ from .schemas import (
     CaptureStep,
     CatalogueResolveRequest,
     CatalogueResolveResponse,
+    CompositionMatchRequest,
+    CompositionMatchResponse,
+    CompositionSearchStatus,
     CreateScanResponse,
     HealthResponse,
     IdentityStatus,
@@ -41,6 +45,9 @@ def create_app(
     ocr_provider: OCRProvider | None = None,
 ) -> FastAPI:
     cfg = settings or get_settings()
+
+    if cfg.environment.lower() in {"production", "prod"} and not cfg.api_key:
+        raise ValueError("API_KEY is required when ENVIRONMENT=production.")
 
     if catalogue_adapter is None:
         if cfg.catalogue_mode.lower() == "rest":
@@ -63,6 +70,7 @@ def create_app(
 
     store = InMemoryScanStore(cfg.upload_dir, cfg.scan_ttl_seconds)
     resolver = ExactProductIdentityResolver()
+    composition_matcher = CompositionGroupMatcher()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -88,7 +96,7 @@ def create_app(
             CORSMiddleware,
             allow_origins=cfg.allowed_origins,
             allow_credentials=cfg.allowed_origins != ["*"],
-            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
             allow_headers=["Authorization", "Content-Type", "X-API-Key"],
         )
 
@@ -196,6 +204,21 @@ def create_app(
             raise
         return capture
 
+    @app.delete(
+        "/v1/scans/{scan_id}/captures/{capture_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+        tags=["Captures"],
+        dependencies=[Depends(require_api_key)],
+    )
+    async def delete_capture(scan_id: str, capture_id: str):
+        removed = store.remove_capture(scan_id, capture_id)
+        if not removed:
+            raise HTTPException(404, detail={
+                "code": "capture_not_found",
+                "message": "Capture not found or already removed.",
+            })
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
     @app.post(
         "/v1/scans/{scan_id}/quality-check",
         response_model=QualityReport,
@@ -299,6 +322,54 @@ def create_app(
             status=IdentityStatus.MULTIPLE,
             candidates=results,
             message="More than one catalogue record may match. Verify the printed pack identity before relying on the result.",
+        )
+
+    @app.post(
+        "/v1/catalogue/composition-matches",
+        response_model=CompositionMatchResponse,
+        tags=["Buyer Catalogue"],
+        dependencies=[Depends(require_api_key)],
+    )
+    async def composition_matches(request: CompositionMatchRequest):
+        session = store.get(request.scan_id)
+        if session.extraction is None:
+            raise HTTPException(409, detail={
+                "code": "recognition_required",
+                "message": "Run recognition before composition-group search.",
+            })
+
+        try:
+            component_signature(
+                session.extraction.composition_components,
+                require_confidence=True,
+            )
+        except CompositionNotComparable as exc:
+            return CompositionMatchResponse(
+                scan_id=request.scan_id,
+                status=CompositionSearchStatus.UNABLE_TO_COMPARE,
+                page=request.page,
+                page_size=request.page_size,
+                message=str(exc),
+            )
+
+        try:
+            products = await app.state.catalogue.search_by_composition(
+                session.extraction.composition_components,
+                page=request.page,
+                page_size=request.page_size,
+            )
+        except CatalogueAdapterError as exc:
+            raise HTTPException(502, detail={
+                "code": "catalogue_unavailable",
+                "message": str(exc),
+            }) from exc
+
+        return composition_matcher.match(
+            session.extraction,
+            products,
+            scan_id=request.scan_id,
+            page=request.page,
+            page_size=request.page_size,
         )
 
     @app.get(
