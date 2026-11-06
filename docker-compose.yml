@@ -1,7 +1,7 @@
 services:
   medicine-engine:
     build: .
-    image: medicine-photo-intelligence-engine:0.1.0
+    image: medicine-photo-intelligence-engine:0.2.0
     env_file:
       - .env
     ports:
