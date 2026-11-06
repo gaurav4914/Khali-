@@ -125,6 +125,7 @@ class CompositionGroupMatcher:
         extraction: ScanExtraction,
         products: list[CatalogueProduct],
         *,
+        scan_id: str,
         page: int = 1,
         page_size: int = 50,
     ) -> CompositionMatchResponse:
@@ -135,7 +136,7 @@ class CompositionGroupMatcher:
             )
         except CompositionNotComparable as exc:
             return CompositionMatchResponse(
-                scan_id="",
+                scan_id=scan_id,
                 status=CompositionSearchStatus.UNABLE_TO_COMPARE,
                 message=str(exc),
                 page=page,
@@ -214,7 +215,7 @@ class CompositionGroupMatcher:
         start = (page - 1) * page_size
         visible = candidates[start : start + page_size]
         return CompositionMatchResponse(
-            scan_id="",
+            scan_id=scan_id,
             status=(
                 CompositionSearchStatus.MATCHES_FOUND
                 if total
