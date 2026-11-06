@@ -27,6 +27,7 @@ from .schemas import (
     IdentityStatus,
     QualityReport,
     ReadinessResponse,
+    ScanExtraction,
     ScanSession,
 )
 from .security import build_api_key_dependency
