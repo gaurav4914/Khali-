@@ -55,6 +55,25 @@ class InMemoryScanStore:
             session.status = ScanStatus.CAPTURING
             return session.model_copy(deep=True)
 
+    def remove_capture(self, scan_id: str, capture_id: str) -> bool:
+        """Remove an individual capture when the user retakes or rejects it."""
+        with self._lock:
+            self._purge_expired_locked()
+            session = self._sessions.get(scan_id)
+            if session is None:
+                raise ScanNotFoundError(scan_id)
+            index = next(
+                (i for i, item in enumerate(session.captures) if item.capture_id == capture_id),
+                None,
+            )
+            if index is None:
+                return False
+            capture = session.captures.pop(index)
+            (self.upload_dir / capture.filename).unlink(missing_ok=True)
+            session.extraction = None
+            session.status = ScanStatus.CAPTURING if session.captures else ScanStatus.CREATED
+            return True
+
     def set_extraction(self, scan_id: str, extraction) -> ScanSession:
         with self._lock:
             self._purge_expired_locked()
