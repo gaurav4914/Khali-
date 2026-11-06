@@ -210,7 +210,7 @@ class CompositionMatchResponse(BaseModel):
     scan_id: str
     status: CompositionSearchStatus
     composition_signature: str | None = None
-    total_matches: int = 0
+    matches_in_page: int = 0
     page: int = 1
     page_size: int = 50
     matches: list[CompositionMatchCandidate] = Field(default_factory=list)
