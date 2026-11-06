@@ -9,30 +9,30 @@ from .schemas import (
 )
 
 STRENGTH_PATTERN = re.compile(
-    r"(?i)\\b\\d+(?:\\.\\d+)?\\s*(?:mg|mcg|µg|μg|ug|g|ml|iu|%)(?:\\b|/)"
+    r"(?i)\b\d+(?:\.\d+)?\s*(?:mg|mcg|µg|μg|ug|g|ml|iu|%)(?:\b|/)"
 )
 COMPONENT_PATTERN = re.compile(
-    r"(?i)^(?P<name>.+?)\\s+(?P<amount>\\d+(?:[.,]\\d+)?)\\s*(?P<unit>mcg|µg|μg|ug|mg|g|iu|ml|%)\\s*$"
+    r"(?i)^(?P<name>.+?)\s+(?P<amount>\d+(?:[.,]\d+)?)\s*(?P<unit>mcg|µg|μg|ug|mg|g|iu|ml|%)\s*$"
 )
 COMPOSITION_HEADING = re.compile(
-    r"(?i)\\bcomposition\\b|\\beach\\s+(?:tablet|capsule|5\\s*ml|10\\s*ml|dose)\\s+contains\\b"
+    r"(?i)\bcomposition\b|\beach\s+(?:tablet|capsule|5\s*ml|10\s*ml|dose)\s+contains\b"
 )
 MANUFACTURER_HINTS = ("manufactured by", "marketed by", "निर्माता", "विपणन")
 STOP_SECTION = re.compile(
-    r"(?i)^(?:indications?|directions?|dosage|storage|warning|manufactured by|marketed by)\\b"
+    r"(?i)^(?:indications?|directions?|dosage|storage|warning|manufactured by|marketed by)\b"
 )
 
 
 def _parse_components(line: str, capture_id: str, confidence: float | None, *, active_context: bool):
     text = re.sub(
-        r"(?i)^\\s*(?:composition\\s*[:\\-]?\\s*)?(?:each\\s+(?:tablet|capsule|5\\s*ml|10\\s*ml|dose)\\s+contains\\s*[:\\-]?\\s*)?",
+        r"(?i)^\s*(?:composition\s*[:\-]?\s*)?(?:each\s+(?:tablet|capsule|5\s*ml|10\s*ml|dose)\s+contains\s*[:\-]?\s*)?",
         "",
         line,
     ).strip(" :;,-")
     if not text or not STRENGTH_PATTERN.search(text):
         return []
 
-    parts = re.split(r"\\s*\\+\\s*|\\s*;\\s*|\\s+and\\s+", text, flags=re.IGNORECASE)
+    parts = re.split(r"\s*\+\s*|\s*;\s*|\s+and\s+", text, flags=re.IGNORECASE)
     parsed = []
     for part in parts:
         candidate = part.strip(" :;,-")
@@ -149,12 +149,15 @@ def extract_printed_fields(documents: list[tuple[str, OCRDocument]]) -> ScanExtr
         if len(signatures) > 1:
             conflicts.append("composition_components")
         else:
-            # Use the highest-confidence capture's list; provenance remains attached.
+            # Prefer a clear, explicitly labelled composition section, then higher OCR confidence.
             composition_components = max(
                 all_component_sets,
-                key=lambda component_set: max(
-                    (item.confidence or 0.0 for item in component_set),
-                    default=0.0,
+                key=lambda component_set: (
+                    sum(item.ingredient_role == IngredientRole.ACTIVE for item in component_set),
+                    max(
+                        (item.confidence or 0.0 for item in component_set),
+                        default=0.0,
+                    ),
                 ),
             )
 
@@ -173,7 +176,7 @@ def extract_printed_fields(documents: list[tuple[str, OCRDocument]]) -> ScanExtr
         printed_composition_text=field(composition_line),
         manufacturer_text=field(manufacturer_line),
         composition_components=composition_components,
-        raw_text="\\n".join(part for part in raw_parts if part)[:12000],
+        raw_text="\n".join(part for part in raw_parts if part)[:12000],
         unreadable_fields=missing,
         field_conflicts=conflicts,
         composition_parse_status=(
